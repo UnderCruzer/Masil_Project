@@ -1,0 +1,141 @@
+name: 상위 작업
+description: 여러 하위 이슈를 묶는 큰 기능 단위입니다.
+title: "[F00] "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        상위 작업 이슈입니다.
+        여러 작은 기능 이슈를 묶어 MVP 진행 상황을 관리할 때 사용합니다.
+
+        예:
+        [F01] 의료 조건 온보딩 MVP 구현
+        [F03] 소원 입력 및 AI 플랜 생성 MVP 구현
+        [F04] AI 플랜 결과 화면 MVP 구현
+
+  - type: input
+    id: frd-range
+    attributes:
+      label: 관련 요구사항 범위
+      description: 이 상위 작업이 포함하는 FRD 범위를 적어주세요.
+      placeholder: "예: F01, F03, F04-05"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 목표
+      description: 이 큰 이슈가 완료되면 어떤 흐름이 가능해야 하나요?
+      placeholder: |
+        예:
+        사용자가 의료 조건을 입력하고, 입력값이 앱 상태에 저장되어 다음 단계인 소원 입력 화면으로 이동할 수 있어야 합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 포함 범위
+      description: 이 이슈에 포함되는 기능을 적어주세요.
+      placeholder: |
+        - 이동거리 선택
+        - 이동 보조기기 선택
+        - 투약 시간 설정
+        - 체력 수준 선택
+        - 입력값 유효성 검사
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 제외 범위
+      description: 이번 상위 작업에서 하지 않을 일을 적어주세요.
+      placeholder: |
+        - 가족 위치 공유
+        - 실시간 보호자 추적
+        - 의료진 연동 기능
+    validations:
+      required: false
+
+  - type: textarea
+    id: sub-tasks
+    attributes:
+      label: 하위 작업
+      description: 작은 이슈를 만들기 전에는 텍스트로 적고, 만든 뒤에는 이슈 번호로 바꿔주세요.
+      placeholder: |
+        - [ ] [F01-01] 이동거리 선택 UI 구현
+        - [ ] [F01-02] 이동 보조기기 선택 UI 구현
+        - [ ] [F01-03] 투약 시간 설정 UI 구현
+        - [ ] [F01-04] 체력 수준 선택 UI 구현
+        - [ ] [F01-06] 입력값 유효성 검사 구현
+
+        작은 이슈 생성 후:
+        - [ ] #12
+        - [ ] #13
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 완료 조건
+      description: 이 상위 작업이 끝났다고 판단할 기준을 적어주세요.
+      placeholder: |
+        - [ ] 하위 작업 이슈가 모두 완료되었다.
+        - [ ] 핵심 사용자 흐름이 앱에서 직접 확인되었다.
+        - [ ] 필수 입력값 누락 시 안내 문구가 표시된다.
+        - [ ] 관련 PR이 develop 브랜치에 병합되었다.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 우선순위
+      description: MVP에 얼마나 중요한 작업인지 선택하세요.
+      options:
+        - p0
+        - p1
+        - p2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 대표 영역
+      description: 가장 중심이 되는 작업 영역을 선택하세요.
+      options:
+        - app
+        - backend
+        - api
+        - infra
+    validations:
+      required: false
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: 예상 리스크
+      description: 막힐 수 있는 부분이나 먼저 결정해야 하는 내용을 적어주세요.
+      placeholder: |
+        - 이동거리 기본값 정책 결정 필요
+        - GPS 없이 출발 위치를 어떻게 정할지 결정 필요
+        - 체력 수준 표현을 숫자가 아닌 쉬운 문장으로 바꿀지 검토 필요
+    validations:
+      required: false
+
+  - type: textarea
+    id: references
+    attributes:
+      label: 참고 자료
+      description: 관련 문서, 목업, 회의 내용이 있으면 적어주세요.
+      placeholder: |
+        - FRD v1.1: SCREEN 01 의료 조건 온보딩
+        - Figma:
+        - 관련 회의 메모:
+    validations:
+      required: false
