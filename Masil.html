@@ -1,0 +1,3507 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>마실 — 소원여행 플래너</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { font-family: "Pretendard", -apple-system, system-ui, sans-serif; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    input[type=range] { -webkit-appearance: none; height: 6px; border-radius: 99px; outline: none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #0A84FF; cursor: pointer; box-shadow: 0 2px 8px rgba(10,132,255,.35); }
+    textarea:focus, input:focus { border-color: #0A84FF !important; }
+    ::-webkit-scrollbar { width: 0; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    window.__resources = {
+      masilAppIcon: "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="#0A84FF"/><text x="50" y="66" text-anchor="middle" font-family="sans-serif" font-size="48">🌿</text></svg>'),
+      masilWordmark: "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="210" height="210" viewBox="0 0 210 210"><text x="105" y="130" text-anchor="middle" font-family="sans-serif" font-size="64" font-weight="900" fill="#2B2D42">마실</text></svg>'),
+    };
+  </script>
+
+  <script type="text/babel">
+// masil-theme.jsx — design tokens + shared UI atoms for the 마실 prototype
+// Tokens lifted verbatim from docs/design.md (color system, type, layout).
+
+const T = {
+  primary: '#0A84FF', primaryLight: '#E6F2FF', primaryDark: '#0060DF',
+  secondary: '#F5A623', secondaryLight: '#FFF3E0',
+  bg: '#FAFAFA', white: '#FFFFFF',
+  gray100: '#F5F5F5', gray200: '#EEEEEE', gray400: '#BDBDBD',
+  gray600: '#757575', gray700: '#616161', gray800: '#424242', gray900: '#212121',
+  error: '#E53935', success: '#43A047', warning: '#FFB300', info: '#1E88E5',
+  navy: '#2B2D42', navySub: '#8D99AE',
+  font: '"Pretendard", -apple-system, system-ui, sans-serif',
+  // stamina 1→5
+  stamina: ['#E53935', '#FF7043', '#FFB300', '#66BB6A', '#0A84FF'],
+  // category spot colors
+  cat: { 관광지: '#0A84FF', 음식점: '#FF7043', 카페: '#FF9800', 공원: '#66BB6A', 숙박: '#5C6BC0' },
+  PAD: 24,
+  topSafe: 60, // clears the iOS status bar inside IOSDevice
+};
+
+// ── full-height screen scaffold: scrollable body + optional pinned bottom bar ──
+function Screen({ children, bottom, bg = T.bg, scrollRef }) {
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: bg, fontFamily: T.font }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {children}
+      </div>
+      {bottom && (
+        <div style={{
+          padding: '12px 24px 30px', background: bg,
+          boxShadow: '0 -4px 16px rgba(0,0,0,0.04)', flexShrink: 0,
+        }}>{bottom}</div>
+      )}
+    </div>
+  );
+}
+
+// ── top app bar: back chevron + step counter pill ──
+function StepBar({ onBack, step, total, label }) {
+  return (
+    <div style={{
+      paddingTop: T.topSafe, padding: `${T.topSafe}px 16px 4px`,
+      display: 'flex', alignItems: 'center', gap: 8, minHeight: 44,
+    }}>
+      <button onClick={onBack} aria-label="back" style={{
+        border: 'none', background: 'transparent', cursor: 'pointer',
+        width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginLeft: -6,
+      }}>
+        <svg width="11" height="19" viewBox="0 0 11 19" fill="none">
+          <path d="M9 2L2 9.5l7 7.5" stroke={T.gray800} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      <div style={{ flex: 1 }} />
+      {step != null && (
+        <div style={{
+          fontSize: 13, fontWeight: 600, color: T.gray600,
+          background: T.gray100, borderRadius: 999, padding: '5px 12px',
+        }}>{label || `${step} / ${total}`}</div>
+      )}
+    </div>
+  );
+}
+
+// thin progress rail under the step bar
+function StepProgress({ step, total }) {
+  return (
+    <div style={{ height: 3, background: T.gray200, margin: '8px 24px 0', borderRadius: 99, overflow: 'hidden' }}>
+      <div style={{
+        height: '100%', width: `${(step / total) * 100}%`, background: T.primary,
+        borderRadius: 99, transition: 'width 350ms cubic-bezier(.4,0,.2,1)',
+      }} />
+    </div>
+  );
+}
+
+// ── big step question + subtitle ──
+function StepHead({ title, sub }) {
+  return (
+    <div style={{ padding: '28px 24px 0' }}>
+      <h1 style={{
+        margin: 0, fontSize: 25, fontWeight: 700, lineHeight: 1.4,
+        color: T.gray900, letterSpacing: -0.4, textWrap: 'balance',
+      }}>{title}</h1>
+      {sub && <p style={{
+        margin: '12px 0 0', fontSize: 15, fontWeight: 400, lineHeight: 1.5,
+        color: T.gray600,
+      }}>{sub}</p>}
+    </div>
+  );
+}
+
+// ── primary CTA (full width) ──
+function PrimaryButton({ children, onClick, disabled, icon }) {
+  return (
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
+      width: '100%', height: 54, borderRadius: 15, border: 'none',
+      background: disabled ? T.gray200 : T.primary,
+      color: disabled ? T.gray400 : '#fff',
+      fontFamily: T.font, fontSize: 16, fontWeight: 700, letterSpacing: -0.2,
+      cursor: disabled ? 'default' : 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      boxShadow: disabled ? 'none' : '0 6px 18px rgba(10,132,255,0.30)',
+      transition: 'background 200ms, box-shadow 200ms',
+    }}>
+      {children}{icon}
+    </button>
+  );
+}
+
+function TextButton({ children, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      border: 'none', background: 'transparent', cursor: 'pointer',
+      fontFamily: T.font, fontSize: 15, fontWeight: 500, color: T.gray400, padding: 8,
+    }}>{children}</button>
+  );
+}
+
+// ── solid single-select chip (5-3) ──
+function SolidChip({ selected, onClick, children, full }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      width: full ? '100%' : undefined, flex: full ? undefined : 1,
+      padding: '14px 16px', borderRadius: 14, cursor: 'pointer',
+      fontFamily: T.font, fontSize: 15, fontWeight: 600, letterSpacing: -0.2,
+      background: selected ? T.primary : T.white,
+      color: selected ? '#fff' : T.gray600,
+      border: `1.5px solid ${selected ? T.primary : T.gray200}`,
+      boxShadow: selected ? '0 6px 16px rgba(10,132,255,0.26)' : 'none',
+      transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+    }}>{children}</button>
+  );
+}
+
+// ── light multi-select chip (5-4) ──
+function LightChip({ selected, onClick, children, pill }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: pill ? '11px 18px' : '12px 16px',
+      borderRadius: pill ? 24 : 13, cursor: 'pointer',
+      fontFamily: T.font, fontSize: 15, fontWeight: 600, letterSpacing: -0.2,
+      background: selected ? T.primaryLight : T.white,
+      color: selected ? T.primaryDark : T.gray400,
+      border: `1.5px solid ${selected ? T.primary : T.gray200}`,
+      transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+    }}>
+      {selected && <Check c={T.primary} />}{children}
+    </button>
+  );
+}
+
+function Check({ c = '#fff', size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M3 8.5l3.2 3.2L13 4.5" stroke={c} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+// ── common card (5-12) ──
+function Card({ children, style, selected, onClick }) {
+  return (
+    <div onClick={onClick} style={{
+      background: T.white, borderRadius: 16,
+      border: `1.5px solid ${selected ? T.primary : T.gray200}`,
+      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+      padding: 16, cursor: onClick ? 'pointer' : 'default',
+      transition: 'all 200ms', ...style,
+    }}>{children}</div>
+  );
+}
+
+// ── gradient header card (5-13) ──
+function GradientHeader({ children, style }) {
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, #1A7BFF, #00C2FF)',
+      borderRadius: 20, padding: 22, color: '#fff',
+      boxShadow: '0 10px 26px rgba(26,148,136,0.28)', ...style,
+    }}>{children}</div>
+  );
+}
+
+// ── striped image placeholder (per design brief — no real images yet) ──
+function ImgSlot({ w = '100%', h = 80, r = 12, label, big }) {
+  return (
+    <div style={{
+      width: w, height: h, borderRadius: r, flexShrink: 0,
+      backgroundColor: '#EEF2F1',
+      backgroundImage: 'repeating-linear-gradient(135deg, rgba(43,191,175,0.10) 0 8px, rgba(43,191,175,0) 8px 16px)',
+      border: '1px solid rgba(43,191,175,0.18)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
+    }}>
+      {label && <span style={{
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontSize: big ? 11 : 9, color: '#7AA8A1', textAlign: 'center',
+        padding: 6, lineHeight: 1.4, letterSpacing: -0.2,
+      }}>{label}</span>}
+    </div>
+  );
+}
+
+// ── number counter (5-9) ──
+function Counter({ value, onChange, min = 1, max = 10, suffix = '명' }) {
+  const Btn = ({ d, disabled }) => (
+    <button onClick={disabled ? undefined : () => onChange(value + d)} disabled={disabled} style={{
+      width: 40, height: 40, borderRadius: 999, cursor: disabled ? 'default' : 'pointer',
+      border: 'none', background: disabled ? T.gray200 : T.primary, color: disabled ? T.gray400 : '#fff',
+      fontSize: 22, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      lineHeight: 1, paddingBottom: 2,
+    }}>{d > 0 ? '+' : '−'}</button>
+  );
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Btn d={-1} disabled={value <= min} />
+      <div style={{ fontSize: 28, fontWeight: 700, color: T.primary, fontFamily: T.font }}>
+        {value}<span style={{ fontSize: 16, color: T.gray600, fontWeight: 500, marginLeft: 3 }}>{suffix}</span>
+      </div>
+      <Btn d={1} disabled={value >= max} />
+    </div>
+  );
+}
+
+// ── friendly inline error (5-20) ──
+function FriendlyError({ children }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 8, alignItems: 'center', marginTop: 14,
+      fontSize: 13.5, color: T.gray700, fontFamily: T.font,
+    }}>
+      <span style={{ fontSize: 15 }}>💬</span>{children}
+    </div>
+  );
+}
+
+Object.assign(window, {
+  T, Screen, StepBar, StepProgress, StepHead, PrimaryButton, TextButton,
+  SolidChip, LightChip, Check, Card, GradientHeader, ImgSlot, Counter, FriendlyError,
+});
+  </script>
+  <script type="text/babel">
+// masil-flow1.jsx — Splash · Onboarding · Condition (5 steps)
+// Relies on window globals from masil-theme.jsx + react.
+const { useState, useEffect, useRef } = React;
+
+/* ───────────────────────── SPLASH ───────────────────────── */
+function Splash({ onDone }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const a = setTimeout(() => setShow(true), 80);
+    const b = setTimeout(onDone, 2200);
+    return () => { clearTimeout(a); clearTimeout(b); };
+  }, []);
+  return (
+    <div style={{
+      height: '100%', background: T.white, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
+      opacity: show ? 1 : 0, transition: 'opacity 700ms ease',
+    }}>
+      {/* content block — shifted 48px above true center */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: -48 }}>
+        {/* app icon */}
+        <img
+          src={window.__resources?.masilAppIcon || 'Masil_app_icon.png'}
+          alt="마실 앱 아이콘"
+          style={{
+            width: 100, height: 100, borderRadius: 24,
+            boxShadow: '0 14px 36px rgba(10,132,255,0.28)',
+          }}
+        />
+        {/* wordmark — white bg blends with splash white */}
+        <img
+          src={window.__resources?.masilWordmark || 'Masil_icon.png'}
+          alt="마실"
+          style={{
+            width: 210, height: 210,
+            marginTop: -8,
+            objectFit: 'contain',
+          }}
+        />
+        {/* subtitle */}
+        <div style={{
+          fontSize: 14, fontWeight: 400, color: T.navySub,
+          marginTop: -4, letterSpacing: -0.1,
+        }}>소원여행, 마음껏 실현</div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────── ONBOARDING ─────────────────────── */
+const ONB = [
+  { bg: '#E8F8F7', emoji: '🌿', title: '몸이 편치 않아도\n괜찮아요', body: ['지금의 체력과 상태에 꼭 맞는 ', { k: '소원여행' }, '을\n마실이 함께 만들어드려요.'] },
+  { bg: '#FFF3E0', emoji: '✨', title: '소원을 들려주세요', body: ['AI가 마음속 소원을 분석해\n', { k: '무장애 여행 코스' }, '를 설계해드려요.'] },
+  { bg: '#E8EAF6', emoji: '🚐', title: '이동도, 투약도\n걱정 마세요', body: ['이동 거리·보조기기·약 시간을 모두 고려한\n', { k: '안심 일정' }, '을 짜드려요.'] },
+  { bg: '#FCE4EC', emoji: '📸', title: '소중한 순간을\n남겨요', body: ['여행지에 ', { k: '타임캡슐' }, '을 남겨\n가족과 따뜻한 추억을 나눠요.'] },
+];
+
+function Onboarding({ onDone, style }) {
+  const [p, setP] = useState(0);
+  const last = p === ONB.length - 1;
+  const page = ONB[p];
+  const richBody = page.body.map((seg, i) =>
+    typeof seg === 'string'
+      ? <span key={i}>{seg}</span>
+      : <span key={i} style={{ color: T.primary, fontWeight: 700 }}>{seg.k}</span>);
+
+  // visual variants for the hero
+  const hero = () => {
+    if (style === 'minimal') {
+      return <div style={{ fontSize: 72, marginBottom: 8 }}>{page.emoji}</div>;
+    }
+    if (style === 'illustration') {
+      return (
+        <ImgSlot w={208} h={208} r={28} big
+          label={`일러스트레이션\n— ${page.title.replace('\n', ' ')} —`} />
+      );
+    }
+    // default: emoji-in-colored-circle
+    return (
+      <div style={{
+        width: 180, height: 180, borderRadius: 999, background: page.bg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'background 350ms ease',
+      }}>
+        <span style={{ fontSize: 76 }}>{page.emoji}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.white, fontFamily: T.font }}>
+      {/* skip */}
+      <div style={{ paddingTop: T.topSafe, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: `${T.topSafe}px 24px 0` }}>
+        <span onClick={onDone} style={{ fontSize: 15, fontWeight: 500, color: T.gray400, cursor: 'pointer', opacity: last ? 0 : 1, transition: 'opacity 300ms', padding: 4 }}>건너뛰기</span>
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 32px', textAlign: 'center' }}>
+        {hero()}
+        <h1 style={{ margin: '36px 0 0', fontSize: 26, fontWeight: 700, lineHeight: 1.4, color: T.gray900, whiteSpace: 'pre-line', letterSpacing: -0.4 }}>{page.title}</h1>
+        <p style={{ margin: '16px 0 0', fontSize: 15, lineHeight: 1.8, color: T.gray600, whiteSpace: 'pre-line' }}>{richBody}</p>
+      </div>
+
+      {/* dots + cta */}
+      <div style={{ padding: '0 24px 30px' }}>
+        <div style={{ display: 'flex', gap: 7, justifyContent: 'center', marginBottom: 24 }}>
+          {ONB.map((_, i) => (
+            <div key={i} style={{
+              height: 7, borderRadius: 99, transition: 'all 300ms',
+              width: i === p ? 22 : 7, background: i === p ? T.primary : T.gray200,
+            }} />
+          ))}
+        </div>
+        <PrimaryButton
+          onClick={() => last ? onDone() : setP(p + 1)}
+          icon={last ? <span style={{ fontSize: 17 }}>♥</span> : null}>
+          {last ? '소원여행 시작하기' : '다음'}
+        </PrimaryButton>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────── CONDITION ─────────────────────── */
+const DIST = [
+  { id: 'near', emoji: '🚶', label: '가까운 마실', meta: '약 5km 이내', km: 5 },
+  { id: 'mid', emoji: '🚗', label: '무리 없는 외출', meta: '10~15km', km: 15 },
+  { id: 'day', emoji: '🗺️', label: '하루 여행', meta: '20km 이상', km: 25 },
+];
+const AID = [
+  { id: 'none', emoji: '🚶', label: '미사용' },
+  { id: 'wheel', emoji: '♿', label: '휠체어' },
+  { id: 'walker', emoji: '🦯', label: '보행보조기' },
+];
+const MEDS = [
+  { id: 'am', emoji: '🌞', label: '오전' },
+  { id: 'pm', emoji: '🌤️', label: '오후' },
+  { id: 'night', emoji: '🌙', label: '야간' },
+];
+const STAMINA = [
+  { n: 1, desc: '입맛이 없고\n일어나기 힘들어요' },
+  { n: 2, desc: '조금 피곤하고\n움직이기 귀찮아요' },
+  { n: 3, desc: '보통이에요,\n무난하게 다닐 수 있어요' },
+  { n: 4, desc: '컨디션\n괜찮아요' },
+  { n: 5, desc: '컨디션\n좋아요!' },
+];
+const STAMINA_FACE = ['😣', '😕', '😐', '🙂', '😄'];
+
+function Condition({ onDone, onBack, staminaStyle }) {
+  const [step, setStep] = useState(1);
+  const total = 5;
+  const [dist, setDist] = useState(null);
+  const [showSlider, setShowSlider] = useState(false);
+  const [sliderKm, setSliderKm] = useState(8);
+  const [aid, setAid] = useState(null);
+  const [meds, setMeds] = useState([]);
+  const [manualMed, setManualMed] = useState(false);
+  const [stam, setStam] = useState(null);
+  const [people, setPeople] = useState(2);
+  const [guardian, setGuardian] = useState(null);
+  const [car, setCar] = useState(null);
+  const [tried, setTried] = useState(false);
+
+  const next = () => {
+    const ok = { 1: dist, 2: aid, 3: meds.length || manualMed, 4: stam, 5: guardian != null && car != null }[step];
+    if (!ok) { setTried(true); return; }
+    setTried(false);
+    if (step < total) setStep(step + 1); else onDone();
+  };
+  const back = () => { if (step > 1) { setStep(step - 1); setTried(false); } else onBack(); };
+  const toggleMed = (id) => setMeds(m => m.includes(id) ? m.filter(x => x !== id) : [...m, id]);
+
+  const stepUI = {
+    1: (
+      <div style={{ padding: '24px 24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {DIST.map(d => (
+          <SolidChip key={d.id} full selected={dist === d.id} onClick={() => setDist(d.id)}>
+            <span style={{ fontSize: 19 }}>{d.emoji}</span>
+            <span style={{ flex: 1, textAlign: 'left', marginLeft: 4 }}>{d.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 500, opacity: dist === d.id ? 0.85 : 1, color: dist === d.id ? '#fff' : T.gray400 }}>{d.meta}</span>
+          </SolidChip>
+        ))}
+        {dist && (
+          <div style={{ background: T.primaryLight, borderRadius: 12, padding: '13px 16px', fontSize: 14, color: T.primaryDark, fontWeight: 500 }}>
+            약 {showSlider ? sliderKm : DIST.find(d => d.id === dist).km}km 이내로 장소를 찾아드릴게요
+          </div>
+        )}
+        <button onClick={() => setShowSlider(s => !s)} style={{ border: 'none', background: 'transparent', color: T.gray400, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start', padding: '4px 0', fontFamily: T.font }}>
+          {showSlider ? '− 직접 조정 닫기' : '+ 직접 조정'}
+        </button>
+        {showSlider && (
+          <div style={{ padding: '4px 2px 0' }}>
+            <input type="range" min="1" max="50" value={sliderKm} onChange={e => setSliderKm(+e.target.value)}
+              style={{ width: '100%', accentColor: T.primary }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: T.gray400, marginTop: 2 }}>
+              <span>1km</span><span style={{ color: T.primary, fontWeight: 700 }}>{sliderKm}km</span><span>50km</span>
+            </div>
+          </div>
+        )}
+        {tried && !dist && <div style={{ padding: '0 0' }}><FriendlyError>아직 선택하지 않으셨어요! 하나만 골라주시면 바로 시작할게요 :)</FriendlyError></div>}
+      </div>
+    ),
+    2: (
+      <div style={{ padding: '24px 24px 0', display: 'flex', gap: 10 }}>
+        {AID.map(a => (
+          <div key={a.id} style={{ flex: 1 }}>
+            <button onClick={() => setAid(a.id)} style={{
+              width: '100%', padding: '20px 6px', borderRadius: 16, cursor: 'pointer',
+              fontFamily: T.font, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+              background: aid === a.id ? T.primary : T.white, color: aid === a.id ? '#fff' : T.gray600,
+              border: `1.5px solid ${aid === a.id ? T.primary : T.gray200}`,
+              boxShadow: aid === a.id ? '0 6px 16px rgba(43,191,175,0.28)' : 'none', transition: 'all 200ms',
+            }}>
+              <span style={{ fontSize: 30 }}>{a.emoji}</span>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{a.label}</span>
+            </button>
+          </div>
+        ))}
+      </div>
+    ),
+    3: (
+      <div style={{ padding: '24px 24px 0' }}>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {MEDS.map(m => (
+            <div key={m.id} style={{ flex: 1 }}>
+              <button onClick={() => toggleMed(m.id)} style={{
+                width: '100%', padding: '16px 6px', borderRadius: 14, cursor: 'pointer', fontFamily: T.font,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                background: meds.includes(m.id) ? T.primaryLight : T.white,
+                color: meds.includes(m.id) ? T.primaryDark : T.gray400,
+                border: `1.5px solid ${meds.includes(m.id) ? T.primary : T.gray200}`, transition: 'all 200ms',
+              }}>
+                <span style={{ fontSize: 24 }}>{m.emoji}</span>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>{m.label}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setManualMed(v => !v)} style={{ border: 'none', background: 'transparent', color: manualMed ? T.primary : T.gray400, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', padding: '14px 0 0', fontFamily: T.font }}>
+          {manualMed ? '− 시간 직접 입력 닫기' : '+ 시간 직접 입력'}
+        </button>
+        {manualMed && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+            <TimeField label="시작" v="08:30" />
+            <span style={{ color: T.gray400 }}>~</span>
+            <TimeField label="종료" v="09:00" />
+          </div>
+        )}
+        <p style={{ fontSize: 13, color: T.gray600, marginTop: 16, lineHeight: 1.5 }}>선택한 시간대엔 이동·관람 일정을 빼고 편히 쉬실 수 있게 짤게요.</p>
+      </div>
+    ),
+    4: <StaminaInput value={stam} onChange={setStam} variant={staminaStyle} />,
+    5: (
+      <div style={{ padding: '24px 24px 0', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <Card>
+          <Label>동행 인원 <Tiny>(환자 포함)</Tiny></Label>
+          <div style={{ marginTop: 12 }}><Counter value={people} onChange={setPeople} /></div>
+        </Card>
+        <YesNo label="보호자 동행 여부" value={guardian} onChange={setGuardian} />
+        <YesNo label="차량 이동 가능 여부" value={car} onChange={setCar} />
+        <div>
+          <Label>비상 연락처 <Tiny>(선택 사항)</Tiny></Label>
+          <input placeholder="010-0000-0000" inputMode="tel" style={{
+            width: '100%', marginTop: 10, boxSizing: 'border-box', height: 50,
+            borderRadius: 13, border: `1.5px solid ${T.gray200}`, background: T.white,
+            padding: '0 16px', fontSize: 15, fontFamily: T.font, color: T.gray900, outline: 'none',
+          }} />
+        </div>
+        {tried && !(guardian != null && car != null) && <FriendlyError>보호자·차량 여부만 알려주시면 일정 짜기를 시작할게요!</FriendlyError>}
+      </div>
+    ),
+  };
+
+  const heads = {
+    1: ['얼마나 이동하실 수 있나요?', '현재 체력에 맞는 거리를 선택해 주세요'],
+    2: ['이동 보조기기를\n사용하시나요?', '접근성 높은 장소를 안내해 드려요'],
+    3: ['약 드시는 시간이\n언제인가요?', '그 시간엔 편히 쉬실 수 있게 일정을 짤게요'],
+    4: ['요즘 몸 상태가\n어떠세요?', '솔직하게 알려주세요, 딱 맞는 일정을 짤게요 😊'],
+    5: ['같이 가는 분들을\n알려주세요', '함께 편하게 즐길 수 있는 장소를 찾아드려요'],
+  };
+
+  return (
+    <Screen bottom={<PrimaryButton onClick={next}>{step === total ? '소원 입력하러 가기' : '다음'}</PrimaryButton>}>
+      <StepBar onBack={back} step={step} total={total} />
+      <StepProgress step={step} total={total} />
+      <StepHead title={heads[step][0]} sub={heads[step][1]} />
+      {stepUI[step]}
+      <div style={{ height: 24 }} />
+    </Screen>
+  );
+}
+
+/* stamina input — three variants (bar / slider / faces) */
+function StaminaInput({ value, onChange, variant = 'bar' }) {
+  const desc = value ? STAMINA[value - 1].desc.replace('\n', ' ') : '단계를 선택해 주세요';
+  if (variant === 'faces') {
+    return (
+      <div style={{ padding: '28px 24px 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+          {STAMINA_FACE.map((f, i) => {
+            const sel = value === i + 1;
+            return (
+              <button key={i} onClick={() => onChange(i + 1)} style={{
+                flex: 1, aspectRatio: '1', borderRadius: 999, cursor: 'pointer',
+                background: sel ? T.stamina[i] + '22' : T.gray100,
+                border: `2.5px solid ${sel ? T.stamina[i] : 'transparent'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transform: sel ? 'scale(1.08)' : 'scale(1)', transition: 'all 200ms',
+              }}>
+                <span style={{ fontSize: 26 }}>{f}</span>
+              </button>
+            );
+          })}
+        </div>
+        <StaminaDesc value={value} desc={desc} />
+      </div>
+    );
+  }
+  if (variant === 'slider') {
+    return (
+      <div style={{ padding: '34px 24px 0' }}>
+        <div style={{ position: 'relative', height: 14, borderRadius: 99, background: `linear-gradient(90deg, ${T.stamina.join(',')})`, opacity: 0.9 }}>
+          {STAMINA.map((s, i) => {
+            const sel = value === s.n;
+            return (
+              <button key={s.n} onClick={() => onChange(s.n)} aria-label={`level ${s.n}`} style={{
+                position: 'absolute', top: '50%', left: `${i * 25}%`, transform: 'translate(-50%,-50%)',
+                width: sel ? 30 : 18, height: sel ? 30 : 18, borderRadius: 999, cursor: 'pointer',
+                background: '#fff', border: `${sel ? 4 : 2}px solid ${T.stamina[i]}`,
+                boxShadow: sel ? '0 4px 12px rgba(0,0,0,0.18)' : '0 1px 3px rgba(0,0,0,0.12)', transition: 'all 200ms',
+              }} />
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: T.gray400, marginTop: 16, fontWeight: 600 }}>
+          <span>많이 힘들어요</span><span>아주 좋아요</span>
+        </div>
+        <StaminaDesc value={value} desc={desc} />
+      </div>
+    );
+  }
+  // default: 5-step bar
+  return (
+    <div style={{ padding: '28px 24px 0' }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {STAMINA.map((s, i) => {
+          const sel = value === s.n;
+          return (
+            <button key={s.n} onClick={() => onChange(s.n)} style={{
+              flex: 1, height: 64, borderRadius: 14, cursor: 'pointer', fontFamily: T.font,
+              background: sel ? T.stamina[i] : T.gray100, border: 'none',
+              color: sel ? '#fff' : T.gray400, fontSize: 20, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: sel ? `0 6px 16px ${T.stamina[i]}55` : 'none', transition: 'all 200ms',
+            }}>
+              {sel ? <Check size={22} /> : s.n}
+            </button>
+          );
+        })}
+      </div>
+      <StaminaDesc value={value} desc={desc} />
+    </div>
+  );
+}
+
+function StaminaDesc({ value, desc }) {
+  return (
+    <div style={{ marginTop: 22, textAlign: 'center', minHeight: 48 }}>
+      <span style={{ fontSize: 17, fontWeight: 700, color: value ? T.stamina[value - 1] : T.gray400, fontFamily: T.font, lineHeight: 1.4 }}>{desc}</span>
+    </div>
+  );
+}
+
+/* small helpers */
+function Label({ children }) { return <div style={{ fontSize: 16, fontWeight: 600, color: T.gray900, fontFamily: T.font }}>{children}</div>; }
+function Tiny({ children }) { return <span style={{ fontSize: 13, fontWeight: 400, color: T.gray400 }}>{children}</span>; }
+function YesNo({ label, value, onChange }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+      <Label>{label}</Label>
+      <div style={{ display: 'flex', gap: 8, width: 168 }}>
+        <SolidChip selected={value === true} onClick={() => onChange(true)}>예</SolidChip>
+        <SolidChip selected={value === false} onClick={() => onChange(false)}>아니오</SolidChip>
+      </div>
+    </div>
+  );
+}
+function TimeField({ label, v }) {
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 12, color: T.gray400, marginBottom: 6, fontFamily: T.font }}>{label}</div>
+      <div style={{ height: 50, borderRadius: 13, border: `1.5px solid ${T.gray200}`, background: T.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 600, color: T.gray800, fontFamily: T.font }}>{v}</div>
+    </div>
+  );
+}
+
+Object.assign(window, { Splash, Onboarding, Condition });
+  </script>
+  <script type="text/babel">
+// masil-flow2.jsx — Wish (4 steps) · Plan Loading · Plan Result (3 layouts)
+const { useState: useS2, useEffect: useE2, useRef: useR2 } = React;
+
+/* ───────────────────────── WISH ───────────────────────── */
+const THEMES = [
+  { id: 'sea', emoji: '🌊', label: '바다', desc: '탁 트인 바닷가' },
+  { id: 'onsen', emoji: '♨️', label: '온천', desc: '따뜻한 휴식' },
+  { id: 'flower', emoji: '🌸', label: '꽃밭', desc: '계절 꽃 구경' },
+  { id: 'nature', emoji: '🏔️', label: '산·자연', desc: '푸른 풍경' },
+  { id: 'culture', emoji: '🏛️', label: '문화', desc: '역사와 예술' },
+  { id: 'food', emoji: '🍜', label: '맛집', desc: '지역 별미' },
+];
+const REGIONS = ['전국', '수도권', '강원', '충청', '전라', '경상', '제주'];
+
+function Wish({ onDone, onBack }) {
+  const [step, setStep] = useS2(1);
+  const total = 4;
+  const [themes, setThemes] = useS2(['sea', 'onsen']);
+  const [wishText, setWishText] = useS2('');
+  const [regions, setRegions] = useS2(['강원']);
+  const [range, setRange] = useS2({ start: 12, end: 14 }); // day-of-month in shown month
+  const [undated, setUndated] = useS2(false);
+
+  const toggle = (arr, set, id) => set(arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id]);
+  const next = () => { if (step < total) setStep(step + 1); else onDone(); };
+  const back = () => { if (step > 1) setStep(step - 1); else onBack(); };
+
+  const nights = range.start && range.end ? Math.max(0, range.end - range.start) : 0;
+
+  const stepUI = {
+    1: (
+      <div style={{ padding: '24px 24px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {THEMES.map(t => {
+          const sel = themes.includes(t.id);
+          return (
+            <button key={t.id} onClick={() => toggle(themes, setThemes, t.id)} style={{
+              position: 'relative', textAlign: 'left', cursor: 'pointer', fontFamily: T.font,
+              padding: '16px 16px', borderRadius: 16,
+              background: sel ? T.primaryLight : T.white,
+              border: `1.5px solid ${sel ? T.primary : T.gray200}`, transition: 'all 200ms',
+            }}>
+              {sel && <span style={{ position: 'absolute', top: 12, right: 12 }}><Check c={T.primary} /></span>}
+              <div style={{ fontSize: 26 }}>{t.emoji}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: sel ? T.primaryDark : T.gray900, marginTop: 8 }}>{t.label}</div>
+              <div style={{ fontSize: 12, color: T.gray400, marginTop: 2 }}>{t.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+    ),
+    2: (
+      <div style={{ padding: '24px 24px 0' }}>
+        <textarea value={wishText} onChange={e => setWishText(e.target.value)}
+          placeholder={'예) 가족과 조용한 온천에서 쉬고 싶다\n바다가 보이는 카페에서 커피 한 잔 하고 싶다'}
+          style={{
+            width: '100%', boxSizing: 'border-box', minHeight: 150, resize: 'none',
+            borderRadius: 16, border: `1.5px solid ${T.gray200}`, background: T.white,
+            padding: 16, fontSize: 15, lineHeight: 1.6, fontFamily: T.font, color: T.gray900,
+            outline: 'none',
+          }} />
+        <p style={{ fontSize: 13, color: T.gray600, marginTop: 12, lineHeight: 1.5 }}>적어주신 소원을 AI가 분석해 특별한 코스로 만들어드려요.</p>
+      </div>
+    ),
+    3: (
+      <div style={{ padding: '24px 24px 0', display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        {REGIONS.map(r => (
+          <LightChip key={r} pill selected={regions.includes(r)} onClick={() => toggle(regions, setRegions, r)}>{r}</LightChip>
+        ))}
+      </div>
+    ),
+    4: (
+      <div style={{ padding: '20px 24px 0' }}>
+        <Calendar range={undated ? {} : range} onPick={(r) => { setRange(r); setUndated(false); }} />
+        {!undated && nights > 0 && (
+          <div style={{ background: T.primaryLight, borderRadius: 12, padding: '14px 16px', marginTop: 16, fontSize: 15, fontWeight: 700, color: T.primaryDark, textAlign: 'center' }}>
+            {nights}박 {nights + 1}일 여행이네요! ✈️
+          </div>
+        )}
+        <button onClick={() => setUndated(true)} style={{
+          width: '100%', marginTop: 14, padding: 14, borderRadius: 12, cursor: 'pointer', fontFamily: T.font,
+          background: undated ? T.gray100 : 'transparent', border: `1.5px dashed ${T.gray200}`,
+          color: T.gray600, fontSize: 14, fontWeight: 600,
+        }}>{undated ? '✓ 날짜 미정으로 진행 중' : '날짜 미정으로 계속'}</button>
+      </div>
+    ),
+  };
+
+  const heads = {
+    1: ['어떤 여행을\n꿈꾸세요?', '마음에 드는 테마를 모두 골라주세요'],
+    2: ['소원을 자유롭게\n적어주세요', 'AI가 분석해서 특별한 코스를 만들어드려요'],
+    3: ['어느 지역으로\n떠나고 싶으세요?', 'n박 m일이라면 여러 지역을 골라도 좋아요'],
+    4: ['언제 떠나실\n예정인가요?', '날짜를 정하면 그날 아침에 컨디션을 확인해드려요 ☀️'],
+  };
+
+  return (
+    <Screen bottom={<PrimaryButton onClick={next} icon={step === total ? <span>✨</span> : null}>{step === total ? 'AI 소원 플랜 생성' : '다음'}</PrimaryButton>}>
+      <StepBar onBack={back} step={step} total={total} />
+      <StepProgress step={step} total={total} />
+      <StepHead title={heads[step][0]} sub={heads[step][1]} />
+      {stepUI[step]}
+      <div style={{ height: 24 }} />
+    </Screen>
+  );
+}
+
+/* mini calendar — June 2026, tap to set range */
+function Calendar({ range, onPick }) {
+  const year = 2026, month = 5; // June (0-indexed)
+  const first = new Date(year, month, 1).getDay();
+  const days = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push(null);
+  for (let d = 1; d <= days; d++) cells.push(d);
+  const pick = (d) => {
+    if (!range.start || (range.start && range.end)) onPick({ start: d, end: null });
+    else if (d < range.start) onPick({ start: d, end: null });
+    else onPick({ start: range.start, end: d });
+  };
+  const inRange = (d) => range.start && range.end && d > range.start && d < range.end;
+  const isEnd = (d) => d === range.start || d === range.end;
+  return (
+    <Card style={{ padding: 18 }}>
+      <div style={{ textAlign: 'center', fontSize: 16, fontWeight: 700, color: T.gray900, marginBottom: 14 }}>2026년 6월</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 6 }}>
+        {['일', '월', '화', '수', '목', '금', '토'].map((w, i) => (
+          <div key={w} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: i === 0 ? T.error : i === 6 ? T.info : T.gray400, padding: '2px 0' }}>{w}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} />;
+          const end = isEnd(d), mid = inRange(d);
+          return (
+            <button key={i} onClick={() => pick(d)} style={{
+              aspectRatio: '1', border: 'none', cursor: 'pointer', fontFamily: T.font, fontSize: 14, fontWeight: end ? 700 : 500,
+              borderRadius: 999,
+              background: end ? T.primary : mid ? T.primaryLight : 'transparent',
+              color: end ? '#fff' : mid ? T.primaryDark : (i % 7 === 0 ? T.error : T.gray800),
+              transition: 'all 150ms',
+            }}>{d}</button>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+/* ───────────────────── PLAN LOADING ───────────────────── */
+const LOAD_MSGS = [
+  '소원을 분석하고 있어요...',
+  '무장애 관광 정보를 확인하고 있어요...',
+  '신체 조건에 맞는 코스를 구성하고 있어요...',
+  '특별한 여행 플랜을 완성하고 있어요...',
+];
+const PREVIEWS = [
+  { name: '경포 해변', desc: '잔잔한 동해, 휠체어 산책 데크', tag: '강릉' },
+  { name: '오죽헌', desc: '평지 정원이 있는 역사 명소', tag: '강릉' },
+  { name: '하슬라 아트월드', desc: '바다가 보이는 미술관 카페', tag: '강릉' },
+];
+
+function PlanLoading({ onDone }) {
+  const [msg, setMsg] = useS2(0);
+  const [prev, setPrev] = useS2(0);
+  const [pct, setPct] = useS2(6);
+  useE2(() => {
+    const m = setInterval(() => setMsg(v => (v + 1) % LOAD_MSGS.length), 2000);
+    const p = setInterval(() => setPrev(v => (v + 1) % PREVIEWS.length), 3000);
+    const g = setInterval(() => setPct(v => Math.min(100, v + 7)), 280);
+    const done = setTimeout(onDone, 4200);
+    return () => { clearInterval(m); clearInterval(p); clearInterval(g); clearTimeout(done); };
+  }, []);
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: T.font }}>
+      <div style={{ paddingTop: T.topSafe + 12, padding: `${T.topSafe + 16}px 24px 0`, textAlign: 'center' }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: T.gray900 }}>✨ AI가 맞춤 여행을 만들고 있어요</div>
+        <div key={msg} style={{ fontSize: 14, color: T.gray600, marginTop: 10, animation: 'fadeUp 400ms ease' }}>{LOAD_MSGS[msg]}</div>
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 24px' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.gray400, marginBottom: 10 }}>이런 곳도 있어요!</div>
+        <Card style={{ display: 'flex', gap: 14, alignItems: 'center' }} key={prev}>
+          <ImgSlot w={80} h={80} r={12} label={'관광지\n사진'} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 600, color: T.primary, background: T.primaryLight, borderRadius: 6, padding: '2px 8px' }}>{PREVIEWS[prev].tag}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.gray900, marginTop: 6 }}>{PREVIEWS[prev].name}</div>
+            <div style={{ fontSize: 13, color: T.gray600, marginTop: 3 }}>{PREVIEWS[prev].desc}</div>
+          </div>
+        </Card>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14 }}>
+          {PREVIEWS.map((_, i) => <div key={i} style={{ width: i === prev ? 18 : 6, height: 6, borderRadius: 99, background: i === prev ? T.primary : T.gray200, transition: 'all 300ms' }} />)}
+        </div>
+      </div>
+      <div style={{ padding: '0 24px 40px' }}>
+        <div style={{ height: 6, borderRadius: 99, background: T.gray200, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: T.primary, borderRadius: 99, transition: 'width 280ms linear' }} />
+        </div>
+        <div style={{ textAlign: 'center', fontSize: 12, color: T.gray400, marginTop: 8 }}>{pct}%</div>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────── PLAN RESULT ───────────────────── */
+const PLAN = {
+  title: '강릉, 바다와 온천의 2박 3일',
+  summary: '잔잔한 바다와 따뜻한 휴식을 담아, 무리 없이 둘러볼 수 있도록 짰어요.',
+  days: [
+    {
+      n: 1, med: '14:00 복약',
+      spots: [
+        { cat: '관광지', name: '경포 해변', desc: '잔잔한 동해를 따라 걷는 평지 산책로', meta: ['머무는 시간 40분', '휠체어 데크'], note: '단차 없는 해변 산책로, 그늘 쉼터 5곳' },
+        { cat: '음식점', name: '초당 순두부마을', desc: '부드러운 순두부로 편안한 점심', meta: ['점심 60분', '입식 좌석'], note: '문턱 없는 입구, 좌식/입식 모두 가능' },
+        { cat: '카페', name: '안목 커피거리', desc: '바다 전망 통유리 카페에서 한 박자 쉬기', meta: ['휴식 50분'], note: '1층 전 구역 평지, 장애인 화장실' },
+      ],
+    },
+    {
+      n: 2, med: '09:00 · 21:00 복약',
+      spots: [
+        { cat: '관광지', name: '오죽헌', desc: '평지 정원을 천천히 둘러보는 역사 명소', meta: ['관람 50분', '평지 동선'], note: '주요 동선 경사로 완비' },
+        { cat: '숙박', name: '온천 리조트 휴식', desc: '객실 내 온천으로 피로를 풀어요', meta: ['오후 휴식'], note: '객실 욕실 안전 손잡이' },
+      ],
+    },
+  ],
+  notes: ['하루 이동은 2~3곳으로 짧게 구성했어요.', '일몰(19:34) 이후 야외 일정은 넣지 않았어요.', '날씨가 흐리면 실내 대체 장소를 안내해드려요.'],
+};
+
+function PlanResult({ onBack, onCapsule, onCheckin, layout = 'timeline' }) {
+  const [dayIdx, setDayIdx] = useS2(0);
+  const [showMed, setShowMed] = useS2(false);
+  const [activeTab, setActiveTab] = useS2('plan');
+  return (
+    <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* tab content area */}
+      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        {activeTab === 'live' && <LiveTab />}
+        {activeTab === 'memory' && <CapsuleListTab onGoWrite={onCapsule} />}
+        {activeTab === 'plan' && <Screen bg={T.bg}>
+      <StepBar onBack={onBack} label="내 소원 플랜" step={1} total={1} />
+      <div style={{ padding: '12px 20px 0' }}>
+        <GradientHeader>
+          <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.85 }}>AI 맞춤 소원여행</div>
+          <div style={{ fontSize: 22, fontWeight: 700, marginTop: 6, lineHeight: 1.35 }}>{PLAN.title}</div>
+          <div style={{ fontSize: 13.5, opacity: 0.92, marginTop: 10, lineHeight: 1.55 }}>{PLAN.summary}</div>
+        </GradientHeader>
+
+        <>
+          {/* 일차 탭 */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            {PLAN.days.map((d, i) => (
+              <button key={i} onClick={() => setDayIdx(i)} style={{
+                padding: '8px 20px', borderRadius: 999, cursor: 'pointer', fontFamily: T.font,
+                fontSize: 13, fontWeight: 700, transition: 'all 180ms', border: 'none',
+                background: dayIdx === i ? T.primary : T.white,
+                color: dayIdx === i ? '#fff' : T.gray600,
+                outline: `1.5px solid ${dayIdx === i ? T.primary : T.gray200}`,
+                boxShadow: dayIdx === i ? '0 4px 12px rgba(10,132,255,0.25)' : 'none',
+              }}>{d.n}일차</button>
+            ))}
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#B26A00', background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: 8, padding: '8px 12px', alignSelf: 'center' }}>
+              💊 {PLAN.days[dayIdx].med}
+            </span>
+          </div>
+          {/* 지도 — 항상 표시 */}
+          <div style={{ marginTop: 12, borderRadius: 14, overflow: 'hidden', border: `1px solid ${T.gray200}` }}>
+            <FakeMap spots={PLAN.days[dayIdx].spots} dayIdx={dayIdx} />
+          </div>
+          {/* 스팡 리스트 */}
+          {(() => {
+            const day = PLAN.days[dayIdx];
+            return (
+              <div style={{ marginTop: 14 }}>
+                {(layout === 'timeline' || layout === 'map') && <TimelineList spots={day.spots} />}
+                {layout === 'cards' && <CardList spots={day.spots} />}
+                {layout === 'compact' && <CompactList spots={day.spots} />}
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#FFF8E1', border: '1px solid #FFCC02', borderRadius: 12, padding: '13px 14px', marginTop: 12 }}>
+                  <span style={{ fontSize: 17 }}>💊</span>
+                  <div style={{ fontSize: 13, color: '#795548', lineHeight: 1.5 }}><b style={{ color: '#8a5a00' }}>{day.med}</b> 시간에는 일정을 비워뒀어요. 알림을 보내드릴게요.</div>
+                </div>
+              </div>
+            );
+          })()}
+        </>
+
+        {/* 주의사항 */}
+        <div style={{ background: T.secondaryLight, border: '1px solid #FFE0B2', borderRadius: 16, padding: 16, marginTop: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, color: T.secondary, marginBottom: 10 }}>
+            <span>⚠️</span> 여행 전 확인해 주세요
+          </div>
+          {PLAN.notes.map((n, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, fontSize: 13.5, color: '#8a6d3b', lineHeight: 1.5, marginTop: i ? 8 : 0 }}>
+              <span style={{ color: T.secondary }}>·</span><span>{n}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* action buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20 }}>
+          <ActionRow emoji="🌅" label="여행 당일 아침 컨디션 체크인" onClick={onCheckin} accent />
+          <ActionRow emoji="🗺️" label="네이버 지도로 경로 보기" />
+          <ActionRow emoji="🏥" label="주변 의료시설 보기" onClick={() => setShowMed(true)} />
+          <ActionRow emoji="📤" label="가족과 일정 공유" />
+        </div>
+
+        <div style={{ height: 16 }} />
+      </div>
+        </Screen>}
+      </div>
+      {/* bottom tab bar */}
+      <BottomTabBar active={activeTab} onChange={setActiveTab} />
+      {showMed && <MedicalOverlay onClose={() => setShowMed(false)} />}
+    </div>
+  );
+}
+
+function CatBadge({ cat }) {
+  return <span style={{ fontSize: 11, fontWeight: 700, color: T.cat[cat], background: T.cat[cat] + '1A', borderRadius: 6, padding: '2px 8px' }}>{cat}</span>;
+}
+function Meta({ items }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+      {items.map((m, i) => <span key={i} style={{ fontSize: 11.5, fontWeight: 500, color: T.gray600, background: T.gray100, borderRadius: 6, padding: '3px 8px' }}>{m}</span>)}
+    </div>
+  );
+}
+function AccessNote({ note }) {
+  return <div style={{ display: 'flex', gap: 6, marginTop: 10, fontSize: 12, color: T.primaryDark, background: T.primaryLight, borderRadius: 8, padding: '7px 10px', lineHeight: 1.4 }}><span>♿</span><span>{note}</span></div>;
+}
+
+function TimelineList({ spots }) {
+  return (
+    <div>
+      {spots.map((s, i) => (
+        <div key={i} style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ width: 28, height: 28, borderRadius: 999, background: T.cat[s.cat], color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
+            {i < spots.length - 1 && <div style={{ width: 2, flex: 1, background: T.gray200, margin: '4px 0', minHeight: 20 }} />}
+          </div>
+          <Card style={{ flex: 1, marginBottom: 12, padding: 14 }}>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <ImgSlot w={64} h={64} r={10} label={'사진'} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: T.gray900 }}>{s.name}</span><CatBadge cat={s.cat} />
+                </div>
+                <div style={{ fontSize: 13, color: T.gray600, marginTop: 4, lineHeight: 1.5 }}>{s.desc}</div>
+              </div>
+            </div>
+            <Meta items={s.meta} />
+            <AccessNote note={s.note} />
+          </Card>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CardList({ spots }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {spots.map((s, i) => (
+        <Card key={i} style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ position: 'relative' }}>
+            <ImgSlot w="100%" h={140} r={0} label={'관광지 대표 사진'} big />
+            <div style={{ position: 'absolute', top: 12, left: 12, width: 30, height: 30, borderRadius: 999, background: T.cat[s.cat], color: '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>{i + 1}</div>
+          </div>
+          <div style={{ padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: T.gray900 }}>{s.name}</span><CatBadge cat={s.cat} />
+            </div>
+            <div style={{ fontSize: 13.5, color: T.gray600, marginTop: 5, lineHeight: 1.5 }}>{s.desc}</div>
+            <Meta items={s.meta} />
+            <AccessNote note={s.note} />
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function CompactList({ spots }) {
+  return (
+    <Card style={{ padding: 6 }}>
+      {spots.map((s, i) => (
+        <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 10, borderBottom: i < spots.length - 1 ? `1px solid ${T.gray100}` : 'none' }}>
+          <div style={{ width: 24, height: 24, borderRadius: 999, background: T.cat[s.cat], color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
+          <ImgSlot w={44} h={44} r={9} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 14.5, fontWeight: 700, color: T.gray900 }}>{s.name}</span><CatBadge cat={s.cat} />
+            </div>
+            <div style={{ fontSize: 12, color: T.gray400, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.meta.join(' · ')}</div>
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+function ActionRow({ emoji, label, onClick, accent }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '15px 16px',
+      borderRadius: 14, cursor: 'pointer', fontFamily: T.font,
+      border: `1.5px solid ${accent ? T.primary : T.gray200}`,
+      background: accent ? T.primaryLight : T.white,
+      transition: 'background 150ms',
+    }}>
+      <span style={{ fontSize: 18 }}>{emoji}</span>
+      <span style={{ flex: 1, textAlign: 'left', fontSize: 15, fontWeight: 600, color: accent ? T.primaryDark : T.gray800 }}>{label}</span>
+      <svg width="8" height="14" viewBox="0 0 8 14"><path d="M1 1l6 6-6 6" stroke={accent ? T.primary : T.gray400} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    </button>
+  );
+}
+
+
+/* ─────────────── 주변 의료시설 ─────────────── */
+const FACILITIES = [
+  { id:1, type:'병원', icon:'🏥', name:'강릉아산병원',       dist:'도보 8분 (0.6km)', hours:'09:00–18:00', open:true,  phone:'033-610-3114' },
+  { id:2, type:'병원', icon:'🏥', name:'강릉중앙병원',       dist:'차량 5분 (2.1km)', hours:'09:00–22:00', open:true,  phone:'033-651-2900' },
+  { id:3, type:'응급', icon:'🚨', name:'강릉세브란스 응급실', dist:'차량 8분 (3.2km)', hours:'24시간',      open:true,  phone:'033-741-0114' },
+  { id:4, type:'약국', icon:'💊', name:'경포해변약국',       dist:'도보 3분 (0.2km)', hours:'09:00–21:00', open:true,  phone:'033-645-1234' },
+  { id:5, type:'약국', icon:'💊', name:'안목약국',           dist:'도보 6분 (0.4km)', hours:'09:00–20:00', open:false, phone:'033-643-5678' },
+];
+
+function MedicalOverlay({ onClose }) {
+  const [filter, setFilter] = useS2('전체');
+  const TYPES = ['전체', '병원', '약국', '응급'];
+  const list = filter === '전체' ? FACILITIES : FACILITIES.filter(f => f.type === filter);
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 200,
+      display: 'flex', alignItems: 'flex-end',
+      background: 'rgba(0,0,0,0.45)', fontFamily: T.font,
+    }} onClick={onClose}>
+      <div style={{
+        background: T.white, borderRadius: '20px 20px 0 0', width: '100%',
+        maxHeight: '74%', display: 'flex', flexDirection: 'column',
+        boxShadow: '0 -8px 30px rgba(0,0,0,0.15)',
+      }} onClick={e => e.stopPropagation()}>
+
+        {/* handle + header */}
+        <div style={{ padding: '14px 20px 0', flexShrink: 0 }}>
+          <div style={{ width: 36, height: 4, background: T.gray200, borderRadius: 99, margin: '0 auto 16px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: T.navy }}>🏥 주변 의료시설</div>
+            <button onClick={onClose} style={{ border: 'none', background: T.gray100, borderRadius: 999, width: 30, height: 30, cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+          <div style={{ fontSize: 12.5, color: T.gray600, marginBottom: 14 }}>현재 위치 기준 가까운 순서예요</div>
+          {/* filter pills */}
+          <div style={{ display: 'flex', gap: 7, marginBottom: 14 }}>
+            {TYPES.map(tp => (
+              <button key={tp} onClick={() => setFilter(tp)} style={{
+                padding: '6px 14px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                fontFamily: T.font, fontSize: 12.5, fontWeight: 600, transition: 'all 160ms',
+                background: filter === tp ? T.primary : T.gray100,
+                color: filter === tp ? '#fff' : T.gray600,
+              }}>{tp}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* facility list */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {list.map(f => {
+            const iconBg = f.type === '응급' ? '#FFF0F0' : f.type === '약국' ? '#F0FFF4' : T.primaryLight;
+            return (
+              <div key={f.id} style={{ background: T.white, borderRadius: 14, border: `1.5px solid ${T.gray200}`, padding: '14px 14px', boxShadow: '0 1px 6px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 12, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{f.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: T.navy }}>{f.name}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: f.open ? T.success : T.error, background: f.open ? '#E8F5E9' : '#FFEBEE', borderRadius: 6, padding: '1px 7px' }}>
+                        {f.open ? '운영중' : '운영종료'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 5, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12.5, color: T.gray600 }}>📍 {f.dist}</span>
+                      <span style={{ fontSize: 12.5, color: T.gray600 }}>⏰ {f.hours}</span>
+                    </div>
+                  </div>
+                </div>
+                <button style={{
+                  marginTop: 12, width: '100%', height: 42, borderRadius: 11,
+                  border: `1.5px solid ${f.open ? T.primary : T.gray200}`,
+                  background: T.white, color: f.open ? T.primary : T.gray400,
+                  fontSize: 14, fontWeight: 700, fontFamily: T.font, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}>
+                  <span>📞</span><span>{f.phone}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { Wish, PlanLoading, PlanResult });
+
+/* ─────────────── MAP LAYOUT ─────────────── */
+const MAP_META = [
+  { rating: 4.6, dist: '도보 12분 (0.9km)' },
+  { rating: 4.4, dist: '도보 8분 (0.5km)' },
+  { rating: 4.7, dist: '도보 5분 (0.3km)' },
+  { rating: 4.5, dist: '도보 15분 (1.2km)' },
+  { rating: 4.8, dist: '차량 5분 (2.1km)' },
+];
+
+// Pin [x,y] positions per day, tuned for Gangneung coast geography
+const PIN_POS = [
+  [[235, 68], [182, 98], [250, 120]],   // 1일차
+  [[138, 84], [162, 130]],              // 2일차
+];
+
+function FakeMap({ spots, dayIdx }) {
+  const pos = PIN_POS[dayIdx] || PIN_POS[0];
+  const sPos = spots.map((s, i) => ({ ...s, x: pos[i]?.[0] ?? 180, y: pos[i]?.[1] ?? 100 }));
+  const routePts = sPos.map(s => `${s.x},${s.y}`).join(' ');
+
+  return (
+    <svg viewBox="0 0 362 180" style={{ width: '100%', display: 'block' }}>
+      {/* land */}
+      <rect width="362" height="180" fill="#ECE8DE" />
+      {/* East Sea */}
+      <path d="M258,0 C274,35 270,100 266,180 L362,180 L362,0 Z" fill="#B6D8F0" />
+      {/* Gyeongpo lake */}
+      <ellipse cx="228" cy="54" rx="19" ry="11" fill="#C6E4F5" opacity="0.9" />
+      {/* forest/park blobs */}
+      <ellipse cx="78" cy="64" rx="50" ry="36" fill="#C2DBB0" opacity="0.7" />
+      <ellipse cx="52" cy="138" rx="36" ry="26" fill="#C2DBB0" opacity="0.55" />
+      <ellipse cx="198" cy="154" rx="28" ry="16" fill="#C2DBB0" opacity="0.4" />
+      {/* major roads */}
+      <line x1="0" y1="100" x2="362" y2="100" stroke="#fff" strokeWidth="5.5" opacity="0.8" />
+      <line x1="185" y1="0" x2="185" y2="180" stroke="#fff" strokeWidth="5" opacity="0.7" />
+      <path d="M88,54 Q155,70 210,60 Q248,54 264,72" stroke="#fff" strokeWidth="3.5" fill="none" opacity="0.6" strokeLinecap="round" />
+      <path d="M98,132 Q168,116 218,130 Q244,138 262,124" stroke="#fff" strokeWidth="3.5" fill="none" opacity="0.55" strokeLinecap="round" />
+      {/* minor road */}
+      <path d="M140,0 L140,100" stroke="#fff" strokeWidth="2.5" opacity="0.45" />
+      {/* route */}
+      <polyline points={routePts} stroke={T.primary} strokeWidth="2.8" strokeDasharray="8 5" fill="none" opacity="0.9" strokeLinejoin="round" />
+      {/* pins */}
+      {sPos.map((s, i) => (
+        <g key={i} transform={`translate(${s.x},${s.y})`}>
+          <ellipse cx="0" cy="17" rx="7" ry="3.5" fill="rgba(0,0,0,0.15)" />
+          <path d="M0,-15 C8,-15 14,-9 14,-2 C14,8 0,20 0,20 C0,20 -14,8 -14,-2 C-14,-9 -8,-15 0,-15 Z" fill={T.primary} />
+          <path d="M0,-15 C8,-15 14,-9 14,-2 C14,8 0,20 0,20 C0,20 -14,8 -14,-2 C-14,-9 -8,-15 0,-15 Z" fill="url(#pinG)" opacity="0.35" />
+          <text textAnchor="middle" y="-1.5" dominantBaseline="middle" fill="#fff" fontSize="10.5" fontWeight="800" fontFamily="-apple-system,sans-serif">{i + 1}</text>
+        </g>
+      ))}
+      {/* gradient def for pin shine */}
+      <defs>
+        <linearGradient id="pinG" x1="0" y1="-15" x2="0" y2="20" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#fff" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {/* compass rose */}
+      <g transform="translate(342,17)">
+        <circle r="11" fill="white" opacity="0.88" />
+        <text textAnchor="middle" y="-3" dominantBaseline="middle" fill="#444" fontSize="7.5" fontWeight="700" fontFamily="sans-serif">N</text>
+        <line y1="0.5" y2="5" stroke="#444" strokeWidth="1.4" />
+      </g>
+      <text x="6" y="176" fill="#bbb" fontSize="7" fontFamily="sans-serif">© 지도 데이터 (프로토타입)</text>
+    </svg>
+  );
+}
+
+function MapLayout({ days }) {
+  const [dayIdx, setDayIdx] = useS2(0);
+  const curDay = days[dayIdx];
+  const gOffset = dayIdx === 0 ? 0 : days[0].spots.length;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/* Day tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {days.map((d, i) => (
+          <button key={i} onClick={() => setDayIdx(i)} style={{
+            padding: '8px 20px', borderRadius: 999, cursor: 'pointer', fontFamily: T.font,
+            fontSize: 13, fontWeight: 700, transition: 'all 180ms',
+            background: dayIdx === i ? T.primary : T.white,
+            color: dayIdx === i ? '#fff' : T.gray600,
+            border: `1.5px solid ${dayIdx === i ? T.primary : T.gray200}`,
+            boxShadow: dayIdx === i ? `0 4px 12px rgba(10,132,255,0.25)` : 'none',
+          }}>{d.n}일차</button>
+        ))}
+      </div>
+
+      {/* Map tile */}
+      <div style={{ borderRadius: 14, overflow: 'hidden', border: `1px solid ${T.gray200}`, marginBottom: 12 }}>
+        <FakeMap spots={curDay.spots} dayIdx={dayIdx} />
+      </div>
+
+      {/* Med strip */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+        <span style={{ fontSize: 15 }}>💊</span>
+        <span style={{ fontSize: 13, color: '#8a5a00', fontWeight: 600, fontFamily: T.font }}>{curDay.med} 시간에는 편히 쉬세요</span>
+      </div>
+
+      {/* Spot list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {curDay.spots.map((s, i) => {
+          const m = MAP_META[gOffset + i] || MAP_META[0];
+          return (
+            <Card key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '13px 14px' }}>
+              <div style={{ width: 28, height: 28, borderRadius: 999, background: T.primary, color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{i + 1}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: T.gray900 }}>{s.name}</span>
+                  <CatBadge cat={s.cat} />
+                </div>
+                <div style={{ fontSize: 13, color: T.gray600, marginTop: 3, lineHeight: 1.4 }}>{s.desc}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#F5A623' }}>★ {m.rating}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: T.gray400, background: T.gray100, borderRadius: 6, padding: '2px 8px' }}>{m.dist}</span>
+                </div>
+              </div>
+              <ImgSlot w={60} h={60} r={10} label="사진" />
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+  </script>
+  <script type="text/babel">
+// masil-flow3.jsx — Condition Check-in (F04-06) · Time Capsule (SCREEN-05)
+const { useState: useS3, useEffect: useE3 } = React;
+
+/* ─────────────── CONDITION CHECK-IN ─────────────── */
+const CI_OPTS = [
+  { id: 'good', emoji: '😊', label: '좋아요!',   color: '#43A047' },
+  { id: 'mid',  emoji: '😐', label: '보통이에요', color: '#FFB300' },
+  { id: 'bad',  emoji: '😔', label: '힘들어요',   color: '#E53935' },
+];
+const CI_SPOTS = [
+  { id: 's1', name: '경포 해변',       cat: '관광지', meta: '40분·데크',  day: 1, fatigue: 2 },
+  { id: 's2', name: '초당 순두부마을', cat: '음식점', meta: '60분·점심',  day: 1, fatigue: 1 },
+  { id: 's3', name: '안목 커피거리',   cat: '카페',   meta: '50분·휴식',  day: 1, fatigue: 3 },
+  { id: 's4', name: '오죽헌',          cat: '관광지', meta: '50분·관람',  day: 2, fatigue: 2 },
+];
+
+function ConditionCheckin({ onBack, onPlan }) {
+  const [sel, setSel] = useS3(null);
+  const [sub, setSub] = useS3(null);
+  const [excl, setExcl] = useS3([]);
+
+  if (sub === 'mid') return <SpotAdjust excl={excl} setExcl={setExcl} onBack={() => setSub(null)} onDone={onPlan} />;
+  if (sub === 'bad') return <LightPlanNotice onBack={() => setSub(null)} onDone={onPlan} />;
+
+  const ctaLabel = !sel ? '상태를 골라주세요'
+    : sel === 'good' ? '예정대로 출발! ✈️'
+    : sel === 'mid'  ? '장소 조정하기'
+    : '경량 플랜 받기 💚';
+
+  return (
+    <Screen bg={T.bg} bottom={
+      <PrimaryButton disabled={!sel} onClick={() => sel === 'good' ? onPlan() : setSub(sel)}>
+        {ctaLabel}
+      </PrimaryButton>
+    }>
+      <div style={{ paddingTop: T.topSafe }}>
+        <div style={{ padding: '16px 20px 0' }}>
+          <GradientHeader>
+            <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.8, marginBottom: 8 }}>여행 당일 아침 ☀️</div>
+            <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.35 }}>오늘이 바로 그날이에요! 🎉</div>
+            <div style={{ fontSize: 14, opacity: 0.9, marginTop: 8 }}>지금 컨디션이 어떠세요?</div>
+          </GradientHeader>
+        </div>
+
+        <div style={{ padding: '28px 20px 0', display: 'flex', gap: 10 }}>
+          {CI_OPTS.map(opt => {
+            const on = sel === opt.id;
+            return (
+              <button key={opt.id} onClick={() => setSel(opt.id)} style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+                padding: '22px 6px 18px', borderRadius: 18, cursor: 'pointer', fontFamily: T.font,
+                background: on ? opt.color + '14' : T.white,
+                border: `${on ? 2.5 : 1.5}px solid ${on ? opt.color : T.gray200}`,
+                transform: on ? 'scale(1.06)' : 'scale(1)',
+                boxShadow: on ? `0 6px 20px ${opt.color}2E` : 'none',
+                transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+              }}>
+                <span style={{ fontSize: 38 }}>{opt.emoji}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: on ? opt.color : T.gray600 }}>{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {sel === 'mid' && <CIBanner bg="#FFF8E1" color="#795548">💬 힘드신 장소를 고르면 AI가 다시 일정을 짜드려요.</CIBanner>}
+        {sel === 'bad' && <CIBanner bg="#FFF3F3" color="#c62828">💬 이동거리를 줄이고 실내 코스로 바꿔드릴게요.</CIBanner>}
+      </div>
+    </Screen>
+  );
+}
+
+function CIBanner({ bg, color, children }) {
+  return (
+    <div style={{ margin: '18px 20px 0', background: bg, borderRadius: 12, padding: '13px 16px', fontSize: 13.5, color, lineHeight: 1.5 }}>
+      {children}
+    </div>
+  );
+}
+
+function SpotAdjust({ excl, setExcl, onBack, onDone }) {
+  const [phase, setPhase] = useS3('select');
+  const toggle = (id) => setExcl(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const maxFat = Math.max(...CI_SPOTS.map(s => s.fatigue));
+
+  if (phase === 'loading') return <AdjustLoading onDone={() => setPhase('result')} />;
+  if (phase === 'result') return <AdjustResult excl={excl} onDone={onDone} />;
+
+  return (
+    <Screen bg={T.bg} bottom={
+      <PrimaryButton onClick={() => excl.length ? setPhase('loading') : onDone()}>
+        {excl.length ? `${excl.length}곳 제외 후 AI 재조정하기 ✨` : '그대로 진행하기'}
+      </PrimaryButton>
+    }>
+      <StepBar onBack={onBack} label="장소 조정" />
+      <StepHead title={'어느 곳을 빼고\n싶으신가요?'} sub="선택 안 하면 기존 일정 그대로 진행해요" />
+      <div style={{ padding: '20px 20px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {CI_SPOTS.map(s => {
+          const out = excl.includes(s.id);
+          const rec = s.fatigue === maxFat;
+          return (
+            <div key={s.id} style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              background: out ? '#FFF3F3' : T.white,
+              border: `1.5px solid ${out ? T.error : T.gray200}`,
+              borderRadius: 14, padding: '13px 16px', transition: 'all 200ms',
+            }}>
+              <div style={{ width: 26, height: 26, borderRadius: 999, background: T.cat[s.cat], color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.day}일</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: T.gray900 }}>{s.name}</span>
+                  {rec && !out && <span style={{ fontSize: 11, fontWeight: 600, color: T.error, background: '#FFEBEE', borderRadius: 6, padding: '1px 7px' }}>피로도 높음</span>}
+                </div>
+                <div style={{ fontSize: 12, color: T.gray400, marginTop: 2 }}>{s.meta}</div>
+              </div>
+              <button onClick={() => toggle(s.id)} style={{
+                padding: '7px 14px', borderRadius: 10, cursor: 'pointer', fontFamily: T.font,
+                fontSize: 13, fontWeight: 700, border: 'none', flexShrink: 0, transition: 'all 200ms',
+                background: out ? T.error : T.gray100, color: out ? '#fff' : T.gray600,
+              }}>{out ? '취소' : '제외'}</button>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ height: 20 }} />
+    </Screen>
+  );
+}
+
+function LightPlanNotice({ onBack, onDone }) {
+  return (
+    <Screen bg={T.bg} bottom={
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <PrimaryButton onClick={onDone}>경량 플랜 받기 💚</PrimaryButton>
+        <TextButton onClick={onBack}>다시 선택</TextButton>
+      </div>
+    }>
+      <StepBar onBack={onBack} label="컨디션 체크인" />
+      <div style={{ padding: '24px 20px 0' }}>
+        <GradientHeader style={{ background: 'linear-gradient(135deg, #66BB6A, #388E3C)' }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>💚</div>
+          <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.4 }}>오늘은 편하게 쉬어도 돼요</div>
+          <div style={{ fontSize: 14, opacity: 0.9, marginTop: 8, lineHeight: 1.6 }}>이동거리를 5km 이내로 줄이고<br />실내 장소 위주로 다시 짜드릴게요.</div>
+        </GradientHeader>
+        <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[['📍','편의시설 가까운 실내 장소 위주'],['⏱️','1~2곳만 짧고 가볍게'],['🚗','이동거리 5km 이내로 단축']].map(([e, t], i) => (
+            <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center', background: T.white, borderRadius: 12, padding: '14px 16px', border: `1px solid ${T.gray200}` }}>
+              <span style={{ fontSize: 20 }}>{e}</span>
+              <span style={{ fontSize: 15, fontWeight: 500, color: T.gray800 }}>{t}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Screen>
+  );
+}
+
+/* ─────────────── TIME CAPSULE ─────────────── */
+const TC_SPOTS = [
+  { id: 'ts1', name: '경포 해변',       cat: '관광지', day: 1 },
+  { id: 'ts2', name: '초당 순두부마을', cat: '음식점', day: 1 },
+  { id: 'ts3', name: '안목 커피거리',   cat: '카페',   day: 1 },
+  { id: 'ts4', name: '오죽헌',          cat: '관광지', day: 2 },
+];
+
+function TimeCapsuleSpots({ onBack, onNext }) {
+  const [sel, setSel] = useS3([]);
+  const toggle = (id) => setSel(p => {
+    if (p.includes(id)) return p.filter(x => x !== id);
+    if (p.length >= 3) return p;
+    return [...p, id];
+  });
+
+  return (
+    <Screen bg={T.bg} bottom={
+      <PrimaryButton disabled={!sel.length} onClick={() => onNext(sel)}>
+        {sel.length ? `${sel.length}곳 선택 — 다음` : '장소를 선택해 주세요'}
+      </PrimaryButton>
+    }>
+      <StepBar onBack={onBack} label="타임캡슐" />
+      <StepHead title={'어느 장소에\n추억을 남길까요?'} sub="최대 3곳을 고를 수 있어요" />
+      <div style={{ padding: '20px 20px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {TC_SPOTS.map(s => {
+          const on = sel.includes(s.id);
+          const full = sel.length >= 3 && !on;
+          return (
+            <button key={s.id} onClick={() => !full && toggle(s.id)} style={{
+              display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', width: '100%',
+              background: on ? T.primaryLight : T.white,
+              border: `1.5px solid ${on ? T.primary : T.gray200}`,
+              borderRadius: 14, padding: '13px 16px', cursor: full ? 'not-allowed' : 'pointer',
+              fontFamily: T.font, transition: 'all 200ms', opacity: full ? 0.45 : 1,
+            }}>
+              <ImgSlot w={50} h={50} r={10} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: on ? T.primaryDark : T.gray900 }}>{s.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: T.cat[s.cat], background: T.cat[s.cat] + '18', borderRadius: 6, padding: '2px 7px' }}>{s.cat}</span>
+                </div>
+                <div style={{ fontSize: 12, color: T.gray400, marginTop: 2 }}>{s.day}일차</div>
+              </div>
+              {on && <div style={{ width: 24, height: 24, borderRadius: 999, background: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Check size={14} /></div>}
+            </button>
+          );
+        })}
+        <div style={{ background: T.primaryLight, borderRadius: 12, padding: '13px 16px', fontSize: 13.5, color: T.primaryDark, lineHeight: 1.5 }}>
+          💙 지정한 가족이 이 장소 근처에 오면 자동으로 열려요.
+        </div>
+      </div>
+      <div style={{ height: 20 }} />
+    </Screen>
+  );
+}
+
+function TimeCapsuleWrite({ spots, onBack, onDone }) {
+  const [tab, setTab] = useS3('letter');
+  const [letter, setLetter] = useS3('');
+  const [recipient, setRecipient] = useS3('');
+  const [recState, setRecState] = useS3('idle');
+  const spotName = TC_SPOTS.find(s => spots?.[0] === s.id)?.name || '선택한 장소';
+
+  useE3(() => {
+    if (recState !== 'recording') return;
+    const tid = setTimeout(() => setRecState('done'), 3200);
+    return () => clearTimeout(tid);
+  }, [recState]);
+
+  const TABS = [
+    { id: 'voice', icon: '🎤', label: '음성' },
+    { id: 'letter', icon: '✉️', label: '편지' },
+    { id: 'photo', icon: '📷', label: '사진' },
+  ];
+
+  const WAVES = Array.from({ length: 28 });
+
+  const tabBody = {
+    voice: (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0 8px' }}>
+        <button onClick={() => recState === 'idle' ? setRecState('recording') : recState === 'recording' ? setRecState('idle') : setRecState('idle')} style={{
+          width: 76, height: 76, borderRadius: 999, border: 'none', cursor: 'pointer',
+          background: recState === 'recording' ? '#FFEBEE' : T.primaryLight,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+          boxShadow: recState === 'recording' ? `0 0 0 8px ${T.error}22` : 'none', transition: 'all 200ms',
+        }}>
+          <span style={{ fontSize: 30 }}>{recState === 'recording' ? '⏹' : recState === 'done' ? '▶️' : '🎤'}</span>
+        </button>
+        <div style={{ fontSize: 14, fontWeight: 600, color: T.gray700, marginBottom: 14 }}>
+          {recState === 'idle' && '탭하면 녹음 시작'}
+          {recState === 'recording' && '녹음 중 · 최대 2분'}
+          {recState === 'done' && '녹음 완료 ✓  —  탭하면 재생'}
+        </div>
+        <div style={{ display: 'flex', gap: 3, alignItems: 'center', height: 32 }}>
+          {WAVES.map((_, i) => (
+            <div key={i} style={{
+              width: 3, borderRadius: 2, transition: 'height 200ms',
+              background: recState === 'recording' ? (i % 2 ? T.primary : T.primaryLight) : T.gray200,
+              height: recState === 'recording' ? `${10 + (i * 11 % 22)}px` : '4px',
+            }} />
+          ))}
+        </div>
+      </div>
+    ),
+    letter: (
+      <div style={{ paddingTop: 14 }}>
+        <textarea value={letter} onChange={e => setLetter(e.target.value)}
+          placeholder={'훗날 이 편지를 받을 분께\n전하고 싶은 말을 적어주세요...'}
+          style={{
+            width: '100%', boxSizing: 'border-box', minHeight: 140, resize: 'none',
+            borderRadius: 14, border: `1.5px solid ${T.gray200}`, background: T.white,
+            padding: 16, fontSize: 15, lineHeight: 1.8, fontFamily: T.font, color: T.gray900, outline: 'none',
+          }} />
+        <div style={{ textAlign: 'right', fontSize: 12, color: T.gray400, marginTop: 4 }}>{letter.length}자</div>
+      </div>
+    ),
+    photo: (
+      <div style={{ paddingTop: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <ImgSlot w="100%" h={88} r={12} label="사진 1" />
+          <ImgSlot w="100%" h={88} r={12} label="사진 2" />
+          <div style={{ height: 88, borderRadius: 12, border: `1.5px dashed ${T.gray200}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, color: T.gray400, cursor: 'pointer', background: T.white }}>+</div>
+        </div>
+        <div style={{ fontSize: 12, color: T.gray400, marginTop: 8, textAlign: 'center' }}>최대 3장</div>
+      </div>
+    ),
+  };
+
+  return (
+    <Screen bg={T.bg} bottom={<PrimaryButton onClick={onDone}>💌 타임캡슐 봉인하기</PrimaryButton>}>
+      <StepBar onBack={onBack} label="타임캡슐 작성" />
+      <div style={{ padding: '12px 20px 0' }}>
+        <GradientHeader>
+          <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.8 }}>📍 {spotName}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, marginTop: 6 }}>이 장소에 추억을 남겨요 💌</div>
+        </GradientHeader>
+
+        {/* tabs */}
+        <div style={{ display: 'flex', gap: 5, marginTop: 18, background: T.gray100, borderRadius: 12, padding: 4 }}>
+          {TABS.map(tb => (
+            <button key={tb.id} onClick={() => setTab(tb.id)} style={{
+              flex: 1, padding: '9px 4px', borderRadius: 9, cursor: 'pointer', fontFamily: T.font, border: 'none',
+              background: tab === tb.id ? T.white : 'transparent',
+              color: tab === tb.id ? T.gray900 : T.gray400,
+              fontSize: 13, fontWeight: 600,
+              boxShadow: tab === tb.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 200ms', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            }}>
+              <span style={{ fontSize: 14 }}>{tb.icon}</span>{tb.label}
+            </button>
+          ))}
+        </div>
+
+        {tabBody[tab]}
+
+        {/* recipient */}
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: T.gray900, marginBottom: 8 }}>열람할 가족 지정</div>
+          <input value={recipient} onChange={e => setRecipient(e.target.value)}
+            placeholder="010-0000-0000" inputMode="tel"
+            style={{ width: '100%', boxSizing: 'border-box', height: 50, borderRadius: 13, border: `1.5px solid ${T.gray200}`, background: T.white, padding: '0 16px', fontSize: 15, fontFamily: T.font, color: T.gray900, outline: 'none' }} />
+        </div>
+
+        <div style={{ marginTop: 14, background: T.primaryLight, borderRadius: 12, padding: '13px 16px', display: 'flex', gap: 10 }}>
+          <span style={{ fontSize: 18 }}>💙</span>
+          <div style={{ fontSize: 13, color: T.primaryDark, lineHeight: 1.6 }}>
+            이 타임캡슐은 바로 열리지 않아요.<br />지정한 가족이 이 장소 근처에 오면 자동으로 열려요.
+          </div>
+        </div>
+        <div style={{ height: 20 }} />
+      </div>
+    </Screen>
+  );
+}
+
+/* ─────────────── AI 재조정 플로우 ─────────────── */
+const REPLACEMENTS = {
+  s1: { name: '강릉 아쿠아리움', cat: '관광지', desc: '실내 해양생물관, 전동휠체어 대여 가능', note: '엘리베이터·장애인 화장실 완비', rating: 4.5, dist: '차량 5분 (2.3km)' },
+  s2: { name: '초당두부 본점', cat: '음식점', desc: '원조 순두부, 저상 입식 좌석', note: '경사로·주차 편리', rating: 4.6, dist: '도보 5분 (0.3km)' },
+  s3: { name: '아리바다 카페', cat: '카페', desc: '실내 오션뷰, 전 구역 계단 없음', note: '장애인 전용 입구·화장실', rating: 4.8, dist: '도보 3분 (0.2km)' },
+  s4: { name: '강릉 선교장', cat: '관광지', desc: '평지 전통 가옥, 이동 부담 적음', note: '전 경로 경사 없음', rating: 4.4, dist: '차량 6분 (2.8km)' },
+};
+const KEPT_META = {
+  s1: { rating: 4.6, dist: '도보 40분' },
+  s2: { rating: 4.4, dist: '도보 8분' },
+  s3: { rating: 4.7, dist: '도보 5분' },
+  s4: { rating: 4.5, dist: '도보 15분' },
+};
+const ADJUST_MSGS = [
+  '컨디션에 맞는 장소를 분석하고 있어요...',
+  '무장애 대체 장소를 탐색하고 있어요...',
+  '오늘 딱 맞는 코스를 구성하고 있어요...',
+];
+const SPOT_MAP_POS = { s1:[235,68], s2:[182,98], s3:[250,120], s4:[138,84] };
+
+function AdjustLoading({ onDone }) {
+  const [msg, setMsg] = useS3(0);
+  const [pct, setPct] = useS3(5);
+  useE3(() => {
+    const m = setInterval(() => setMsg(v => (v + 1) % ADJUST_MSGS.length), 1100);
+    const p = setInterval(() => setPct(v => Math.min(100, v + 11)), 200);
+    const t = setTimeout(onDone, 2400);
+    return () => { clearInterval(m); clearInterval(p); clearTimeout(t); };
+  }, []);
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: T.white, padding: '0 32px', fontFamily: T.font }}>
+      <div style={{ fontSize: 52, marginBottom: 22 }}>🔍</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: T.navy, textAlign: 'center', marginBottom: 10 }}>AI가 대체 장소를 찾고 있어요</div>
+      <div style={{ fontSize: 14, color: T.gray600, textAlign: 'center', marginBottom: 34, minHeight: 22, lineHeight: 1.5 }}>{ADJUST_MSGS[msg]}</div>
+      <div style={{ width: '100%', height: 6, borderRadius: 99, background: T.gray200, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: T.primary, borderRadius: 99, transition: 'width 200ms linear' }} />
+      </div>
+      <div style={{ fontSize: 12, color: T.gray400, marginTop: 8 }}>{pct}%</div>
+    </div>
+  );
+}
+
+function AdjustResult({ excl, onDone }) {
+  const updatedSpots = CI_SPOTS.map(s => {
+    if (excl.includes(s.id) && REPLACEMENTS[s.id]) {
+      return { ...REPLACEMENTS[s.id], id: s.id, isNew: true, origName: s.name };
+    }
+    const km = KEPT_META[s.id] || { rating: 4.5, dist: '도보 10분' };
+    return { ...s, isNew: false, ...km, note: '' };
+  });
+  const replCount = excl.filter(id => REPLACEMENTS[id]).length;
+
+  return (
+    <Screen bg={T.bg} bottom={<PrimaryButton onClick={onDone}>이 플랜으로 출발! ✈️</PrimaryButton>}>
+      <StepBar onBack={onDone} label="AI 재조정 완료" />
+      <div style={{ padding: '12px 20px 0' }}>
+        <GradientHeader>
+          <div style={{ fontSize: 12.5, fontWeight: 600, opacity: 0.85 }}>AI 컨디션 맞춤 재조정</div>
+          <div style={{ fontSize: 21, fontWeight: 700, marginTop: 6, lineHeight: 1.35 }}>맞춤 코스로 바꿨어요 ✨</div>
+          <div style={{ fontSize: 13.5, opacity: 0.9, marginTop: 8, lineHeight: 1.55 }}>
+            {replCount}곳을 빼고 오늘 컨디션에 더 편한 장소로 교체했어요.
+          </div>
+        </GradientHeader>
+
+        {/* 통계 */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <AdjStatChip emoji="📍" label={`${updatedSpots.filter(s => !s.isNew).length}곳 유지`} color={T.gray700} bg={T.gray100} />
+          <AdjStatChip emoji="✨" label={`${replCount}곳 교체`} color={T.primaryDark} bg={T.primaryLight} />
+          <AdjStatChip emoji="⏱️" label="이동 단축" color="#388E3C" bg="#E8F5E9" />
+        </div>
+
+        {/* 미니 지도 */}
+        <div style={{ marginTop: 14, borderRadius: 14, overflow: 'hidden', border: `1px solid ${T.gray200}` }}>
+          <AdjustedMiniMap excl={excl} />
+        </div>
+
+        {/* 스팟 목록 */}
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {updatedSpots.map((s, i) => (
+            <div key={s.id}>
+              {s.isNew && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <div style={{ flex: 1, height: 1, background: T.gray200 }} />
+                  <span style={{ fontSize: 11.5, fontFamily: T.font, whiteSpace: 'nowrap' }}>
+                    <span style={{ textDecoration: 'line-through', color: T.gray400 }}>{s.origName}</span>
+                    <span style={{ color: T.gray400 }}> → </span>
+                    <b style={{ color: T.primary }}>AI 추천 대체</b>
+                  </span>
+                  <div style={{ flex: 1, height: 1, background: T.gray200 }} />
+                </div>
+              )}
+              <Card style={{
+                display: 'flex', gap: 12, alignItems: 'flex-start', padding: '13px 14px',
+                border: `1.5px solid ${s.isNew ? T.primary : T.gray200}`,
+                background: s.isNew ? T.primaryLight : T.white,
+              }}>
+                <div style={{ width: 28, height: 28, borderRadius: 999, background: s.isNew ? T.primary : (T.cat[s.cat] || T.gray600), color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{i + 1}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: s.isNew ? T.primaryDark : T.gray900 }}>{s.name}</span>
+                    {s.isNew && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: T.primary, borderRadius: 6, padding: '2px 8px' }}>✨ AI 추천</span>}
+                    <span style={{ fontSize: 11, fontWeight: 600, color: T.cat[s.cat] || '#888', background: (T.cat[s.cat] || '#888') + '18', borderRadius: 6, padding: '2px 7px' }}>{s.cat}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: T.gray600, marginTop: 3, lineHeight: 1.4 }}>{s.desc}</div>
+                  {s.note && <div style={{ display: 'flex', gap: 5, marginTop: 7, fontSize: 12, color: T.primaryDark, background: T.primaryLight, borderRadius: 8, padding: '6px 10px' }}><span>♿</span><span>{s.note}</span></div>}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 7, alignItems: 'center' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#F5A623' }}>★ {s.rating}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: T.gray400, background: T.gray100, borderRadius: 6, padding: '2px 8px' }}>{s.dist}</span>
+                  </div>
+                </div>
+                <ImgSlot w={56} h={56} r={10} />
+              </Card>
+            </div>
+          ))}
+        </div>
+        <div style={{ height: 20 }} />
+      </div>
+    </Screen>
+  );
+}
+
+function AdjStatChip({ emoji, label, color, bg }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: bg, borderRadius: 10, padding: '8px 11px', fontFamily: T.font }}>
+      <span style={{ fontSize: 13 }}>{emoji}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color }}>{label}</span>
+    </div>
+  );
+}
+
+function AdjustedMiniMap({ excl }) {
+  const hasRep = (id) => excl.includes(id) && REPLACEMENTS[id];
+  const allPins = Object.values(SPOT_MAP_POS); // [[235,68],[182,98],[250,120],[138,84]]
+  return (
+    <svg viewBox="0 0 362 155" style={{ width: '100%', display: 'block' }}>
+      <rect width="362" height="155" fill="#ECE8DE" />
+      <path d="M258,0 C273,28 270,88 266,155 L362,155 L362,0 Z" fill="#B6D8F0" />
+      <ellipse cx="226" cy="48" rx="18" ry="10" fill="#C6E4F5" opacity="0.9" />
+      <ellipse cx="78" cy="58" rx="48" ry="30" fill="#C2DBB0" opacity="0.65" />
+      <ellipse cx="50" cy="118" rx="32" ry="22" fill="#C2DBB0" opacity="0.5" />
+      <line x1="0" y1="86" x2="362" y2="86" stroke="#fff" strokeWidth="5" opacity="0.75" />
+      <line x1="184" y1="0" x2="184" y2="155" stroke="#fff" strokeWidth="4.5" opacity="0.65" />
+      <path d="M86,48 Q154,64 208,54 Q246,48 263,66" stroke="#fff" strokeWidth="3" fill="none" opacity="0.55" strokeLinecap="round" />
+      {/* route through adjusted positions */}
+      <polyline
+        points={CI_SPOTS.map(s => {
+          const p = SPOT_MAP_POS[s.id];
+          return hasRep(s.id) ? `${p[0]-14},${p[1]+8}` : `${p[0]},${p[1]}`;
+        }).join(' ')}
+        stroke={T.primary} strokeWidth="2.5" strokeDasharray="7 5" fill="none" opacity="0.8"
+      />
+      {CI_SPOTS.map((s, i) => {
+        const p = SPOT_MAP_POS[s.id];
+        const rep = hasRep(s.id);
+        const nx = rep ? p[0] - 14 : p[0];
+        const ny = rep ? p[1] + 8 : p[1];
+        return (
+          <g key={s.id}>
+            {/* faded original pin when replaced */}
+            {rep && (
+              <g transform={`translate(${p[0]},${p[1]})`} opacity="0.28">
+                <path d="M0,-12 C6,-12 11,-7 11,-1.5 C11,6 0,16 0,16 C0,16 -11,6 -11,-1.5 C-11,-7 -6,-12 0,-12 Z" fill={T.gray600} />
+                <text textAnchor="middle" y="-1" dominantBaseline="middle" fill="#fff" fontSize="10" fontWeight="800" fontFamily="sans-serif">✕</text>
+              </g>
+            )}
+            {/* new/kept pin */}
+            <g transform={`translate(${nx},${ny})`}>
+              <ellipse cx="0" cy="13" rx="5.5" ry="2.8" fill="rgba(0,0,0,0.12)" />
+              <path d="M0,-12 C6,-12 11,-7 11,-1.5 C11,6 0,16 0,16 C0,16 -11,6 -11,-1.5 C-11,-7 -6,-12 0,-12 Z" fill={T.primary} />
+              {rep && <circle cx="8" cy="-12" r="6" fill={T.secondary} stroke="#fff" strokeWidth="1.5" />}
+              {rep && <text x="8" y="-12" textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize="8" fontWeight="800">✨</text>}
+              <text textAnchor="middle" y="-1" dominantBaseline="middle" fill="#fff" fontSize="10" fontWeight="800" fontFamily="sans-serif">{i + 1}</text>
+            </g>
+          </g>
+        );
+      })}
+      {/* legend */}
+      <g transform="translate(8,136)">
+        <circle cx="6" cy="6" r="5" fill={T.primary} />
+        <text x="14" y="10" fill="#666" fontSize="8" fontFamily="sans-serif">유지/교체</text>
+        <circle cx="66" cy="6" r="5" fill={T.gray400} opacity="0.4" />
+        <text x="74" y="10" fill="#666" fontSize="8" fontFamily="sans-serif">제외</text>
+        <circle cx="102" cy="6" r="4.5" fill={T.secondary} />
+        <text x="110" y="10" fill="#666" fontSize="8" fontFamily="sans-serif">AI 추천</text>
+      </g>
+      <text x="310" y="151" fill="#bbb" fontSize="7" fontFamily="sans-serif">© 프로토타입</text>
+    </svg>
+  );
+}
+
+Object.assign(window, { ConditionCheckin, TimeCapsuleSpots, TimeCapsuleWrite });
+  </script>
+  <script type="text/babel">
+// masil-live.jsx — BottomTabBar · LiveTab (실시간) · CapsuleListTab (추억)
+const { useState: useS4, useEffect: useE4, useRef: useR4 } = React;
+
+/* ─────────────── BOTTOM TAB BAR ─────────────── */
+const TABS = [
+  { id: 'plan',    icon: '📋', label: '플랜' },
+  { id: 'live',    icon: '📍', label: '지금' },
+  { id: 'memory',  icon: '💌', label: '추억' },
+];
+
+function BottomTabBar({ active, onChange }) {
+  const icons = {
+    plan: (on) => (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+        stroke={on ? T.navy : T.gray400} strokeWidth={on ? 2.2 : 1.8}
+        strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 10L12 3l9 7v10a1 1 0 01-1 1H4a1 1 0 01-1-1V10z"/>
+        <path d="M9 21V13h6v8"/>
+      </svg>
+    ),
+    live: (on) => (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+        stroke={on ? T.navy : T.gray400} strokeWidth={on ? 2.2 : 1.8}
+        strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+        <circle cx="12" cy="9" r="2.5"/>
+      </svg>
+    ),
+    memory: (on) => (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+        stroke={on ? T.navy : T.gray400} strokeWidth={on ? 2.2 : 1.8}
+        strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l7.78-7.78a5.5 5.5 0 000-7.78z"/>
+      </svg>
+    ),
+  };
+  return (
+    <div style={{ background: T.bg, padding: '6px 14px 14px', flexShrink: 0 }}>
+      <div style={{
+        display: 'flex', background: T.white, borderRadius: 26,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.10)',
+        padding: '5px 5px',
+      }}>
+        {TABS.map(tb => {
+          const on = active === tb.id;
+          return (
+            <button key={tb.id} onClick={() => onChange(tb.id)} style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', gap: 4, border: 'none', cursor: 'pointer',
+              fontFamily: T.font, padding: '10px 4px', borderRadius: 20,
+              background: on ? '#F0F0F0' : 'transparent',
+              transition: 'background 180ms',
+            }}>
+              {icons[tb.id](on)}
+              <span style={{
+                fontSize: 11, fontWeight: on ? 700 : 500,
+                color: on ? T.navy : T.gray400, transition: 'color 180ms',
+              }}>{tb.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────── LIVE TAB (📍 지금) ─────────────── */
+const SCENARIOS = [
+  { id: 'late',    emoji: '⏰', label: '일정 지연',  color: '#FF7043',
+    title: '예상보다 15분 늦어지고 있어요',
+    body: '다음 일정을 자동으로 조정할까요?',
+    accept: '네, 조정해줘', decline: '그대로 갈게요' },
+  { id: 'med',     emoji: '💊', label: '복약 알림',  color: '#FFB300',
+    title: '15분 후 복약 시간이에요',
+    body: '근처 편의점이나 카페를 안내해드릴까요?',
+    accept: '찾아줘', decline: '괜찮아요' },
+  { id: 'weather', emoji: '🌧️', label: '날씨 변화',  color: '#1E88E5',
+    title: '1시간 후 비 예보가 있어요',
+    body: '실내 대체 장소로 바꿔드릴까요?',
+    accept: '바꿔줘', decline: '그냥 갈게요' },
+  { id: 'fatigue', emoji: '😮‍💨', label: '피로 감지',  color: '#66BB6A',
+    title: '걸음 속도가 느려졌어요',
+    body: '가까운 쉼터로 일정을 잠깐 조정할까요?',
+    accept: '쉬고 싶어요', decline: '괜찮아요' },
+];
+
+// Dot animation path (start → spot 1)
+const DOT_PATH = { sx: 108, sy: 148, ex: 232, ey: 68 };
+
+function LiveTab() {
+  const [scenario, setScenario] = useS4(null);
+  const [accepted, setAccepted] = useS4(null);
+  const [dotT, setDotT] = useS4(0); // 0-1
+  const animRef = useR4(null);
+
+  useE4(() => {
+    let t = 0;
+    const step = () => {
+      t += 0.0025;
+      if (t > 1) t = 0;
+      setDotT(t);
+      animRef.current = requestAnimationFrame(step);
+    };
+    animRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animRef.current);
+  }, []);
+
+  const dotX = DOT_PATH.sx + (DOT_PATH.ex - DOT_PATH.sx) * dotT;
+  const dotY = DOT_PATH.sy + (DOT_PATH.ey - DOT_PATH.sy) * dotT;
+  const distPct = Math.round(dotT * 100);
+  const etaMins = Math.max(1, Math.round((1 - dotT) * 12));
+
+  const handleAccept = () => { setAccepted(scenario); setScenario(null); };
+  const handleDecline = () => setScenario(null);
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: T.bg, fontFamily: T.font }}>
+      {/* status header */}
+      <div style={{ padding: `${T.topSafe}px 20px 0` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 999, background: T.success, boxShadow: `0 0 0 4px ${T.success}33` }} />
+          <span style={{ fontSize: 14, fontWeight: 700, color: T.navy }}>실시간 위치 추적 중</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: T.gray400 }}>GPS 정확도 5m</span>
+        </div>
+      </div>
+
+      {/* live map */}
+      <div style={{ margin: '14px 20px 0', borderRadius: 14, overflow: 'hidden', border: `1px solid ${T.gray200}` }}>
+        <LiveMapView dotX={dotX} dotY={dotY} />
+      </div>
+
+      {/* next destination card */}
+      <div style={{ margin: '12px 20px 0' }}>
+        <Card style={{ padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: T.gray400, marginBottom: 6 }}>다음 목적지</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.navy }}>경포 해변</div>
+              <div style={{ fontSize: 13, color: T.gray600, marginTop: 3 }}>도보 {etaMins}분 남음 · 도착 예정 14:{String(20 - etaMins).padStart(2, '0')}</div>
+            </div>
+            <div style={{
+              width: 48, height: 48, borderRadius: 999, border: `3px solid ${T.primaryLight}`, position: 'relative',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <svg style={{ position: 'absolute', inset: 0 }} viewBox="0 0 48 48">
+                <circle cx="24" cy="24" r="21" fill="none" stroke={T.primary} strokeWidth="3"
+                  strokeDasharray={`${132 * distPct / 100} 132`} strokeLinecap="round"
+                  transform="rotate(-90 24 24)" />
+              </svg>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.primary }}>{distPct}%</span>
+            </div>
+          </div>
+          {/* progress bar */}
+          <div style={{ height: 5, background: T.gray100, borderRadius: 99, marginTop: 14, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${distPct}%`, background: T.primary, borderRadius: 99, transition: 'width 200ms linear' }} />
+          </div>
+        </Card>
+      </div>
+
+      {/* accepted result */}
+      {accepted && (
+        <div style={{ margin: '12px 20px 0', background: '#E8F5E9', borderRadius: 12, padding: '12px 16px', border: '1px solid #A5D6A7', fontSize: 13.5, color: '#2E7D32', fontWeight: 600 }}>
+          ✅ {SCENARIOS.find(s => s.id === accepted)?.title.replace('있어요', '→ 조정했어요!')}
+        </div>
+      )}
+
+      {/* active alert */}
+      {scenario && (
+        <div style={{ margin: '12px 20px 0' }}>
+          <AlertCard sc={SCENARIOS.find(s => s.id === scenario)} onAccept={handleAccept} onDecline={handleDecline} />
+        </div>
+      )}
+
+      {/* scenario sim */}
+      <div style={{ padding: '18px 20px 0' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.gray700, marginBottom: 10 }}>🔧 시나리오 시뮬레이션</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {SCENARIOS.map(sc => (
+            <button key={sc.id} onClick={() => { setScenario(sc.id); setAccepted(null); }} style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px',
+              borderRadius: 12, border: `1.5px solid ${scenario === sc.id ? sc.color : T.gray200}`,
+              background: scenario === sc.id ? sc.color + '12' : T.white,
+              cursor: 'pointer', fontFamily: T.font, transition: 'all 180ms',
+            }}>
+              <span style={{ fontSize: 18 }}>{sc.emoji}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: scenario === sc.id ? sc.color : T.gray700 }}>{sc.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* today's plan summary */}
+      <div style={{ padding: '18px 20px 24px' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.gray700, marginBottom: 10 }}>오늘 남은 일정</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[
+            { n: 1, name: '경포 해변', time: '14:00', done: distPct > 80 },
+            { n: 2, name: '초당 순두부마을', time: '15:30', done: false },
+            { n: 3, name: '안목 커피거리', time: '17:00', done: false },
+          ].map(s => (
+            <div key={s.n} style={{
+              display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px',
+              background: s.done ? T.primaryLight : T.white, borderRadius: 12,
+              border: `1px solid ${s.done ? T.primary : T.gray200}`, opacity: s.done ? 0.7 : 1,
+            }}>
+              <div style={{ width: 22, height: 22, borderRadius: 999, background: s.done ? T.primary : T.gray200, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.done ? '✓' : s.n}</div>
+              <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.gray900 }}>{s.name}</span>
+              <span style={{ fontSize: 12, color: T.gray400 }}>{s.time}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveMapView({ dotX, dotY }) {
+  return (
+    <svg viewBox="0 0 362 185" style={{ width: '100%', display: 'block' }}>
+      <rect width="362" height="185" fill="#ECE8DE" />
+      <path d="M258,0 C273,30 270,105 266,185 L362,185 L362,0 Z" fill="#B6D8F0" />
+      <ellipse cx="226" cy="50" rx="18" ry="10" fill="#C6E4F5" opacity="0.9" />
+      <ellipse cx="78" cy="62" rx="48" ry="32" fill="#C2DBB0" opacity="0.65" />
+      <ellipse cx="50" cy="128" rx="32" ry="22" fill="#C2DBB0" opacity="0.5" />
+      <line x1="0" y1="95" x2="362" y2="95" stroke="#fff" strokeWidth="5" opacity="0.75" />
+      <line x1="184" y1="0" x2="184" y2="185" stroke="#fff" strokeWidth="4.5" opacity="0.65" />
+      <path d="M86,50 Q154,66 208,56 Q246,50 263,68" stroke="#fff" strokeWidth="3" fill="none" opacity="0.55" strokeLinecap="round" />
+      <path d="M100,130 Q168,115 218,128" stroke="#fff" strokeWidth="3" fill="none" opacity="0.5" strokeLinecap="round" />
+
+      {/* route line */}
+      <polyline points={`${DOT_PATH.sx},${DOT_PATH.sy} 235,68 182,98 250,120`} stroke={T.primary} strokeWidth="2.5" strokeDasharray="7 5" fill="none" opacity="0.6" />
+
+      {/* destination pins */}
+      {[[235,68],[182,98],[250,120]].map(([px,py],i) => (
+        <g key={i} transform={`translate(${px},${py})`}>
+          <ellipse cx="0" cy="13" rx="5" ry="2.5" fill="rgba(0,0,0,0.1)" />
+          <path d="M0,-12 C6,-12 11,-7 11,-1.5 C11,6 0,16 0,16 C0,16 -11,6 -11,-1.5 C-11,-7 -6,-12 0,-12 Z" fill={T.primary} opacity="0.5" />
+          <text textAnchor="middle" y="-1" dominantBaseline="middle" fill="#fff" fontSize="10" fontWeight="800" fontFamily="sans-serif">{i+1}</text>
+        </g>
+      ))}
+
+      {/* current location dot (animated) */}
+      <g transform={`translate(${dotX},${dotY})`}>
+        <circle r="16" fill={T.primary} opacity="0.12" />
+        <circle r="10" fill={T.primary} opacity="0.25" />
+        <circle r="6" fill={T.primary} />
+        <circle r="2.5" fill="#fff" />
+      </g>
+
+      {/* start label */}
+      <rect x="82" y="138" width="34" height="16" rx="4" fill="#fff" opacity="0.85" />
+      <text x="99" y="149" textAnchor="middle" fill={T.primary} fontSize="8.5" fontWeight="700" fontFamily="sans-serif">현위치</text>
+
+      {/* compass */}
+      <g transform="translate(342,18)">
+        <circle r="11" fill="white" opacity="0.88" />
+        <text textAnchor="middle" y="-3" dominantBaseline="middle" fill="#444" fontSize="7.5" fontWeight="700" fontFamily="sans-serif">N</text>
+        <line y1="0.5" y2="5" stroke="#444" strokeWidth="1.4" />
+      </g>
+    </svg>
+  );
+}
+
+function AlertCard({ sc, onAccept, onDecline }) {
+  return (
+    <div style={{
+      background: T.white, borderRadius: 16, border: `2px solid ${sc.color}`,
+      padding: 16, boxShadow: `0 6px 20px ${sc.color}22`,
+      animation: 'fadeUp 300ms ease',
+    }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 14 }}>
+        <span style={{ fontSize: 24 }}>{sc.emoji}</span>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.navy }}>{sc.title}</div>
+          <div style={{ fontSize: 13, color: T.gray600, marginTop: 4 }}>{sc.body}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onDecline} style={{ flex: 1, height: 42, borderRadius: 11, border: `1.5px solid ${T.gray200}`, background: T.white, color: T.gray600, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>{sc.decline}</button>
+        <button onClick={onAccept} style={{ flex: 1, height: 42, borderRadius: 11, border: 'none', background: sc.color, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>{sc.accept}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────── CAPSULE LIST TAB (💌 추억) ─────────────── */
+const CAPSULE_DATA = [
+  { id: 'c1', spot: '경포 해변',       day: '1일차', type: '✉️', locked: true,  msg: '파도 소리와 함께 남겨두는 편지' },
+  { id: 'c2', spot: '초당 순두부마을', day: '1일차', type: '📷', locked: true,  msg: '온 가족이 함께한 점심 사진' },
+  { id: 'c3', spot: '오죽헌',          day: '2일차', type: '🎤', locked: false, msg: '음성 메시지 — 열람 가능' },
+];
+
+function CapsuleListTab({ onGoWrite }) {
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: T.bg, fontFamily: T.font }}>
+      <div style={{ padding: `${T.topSafe + 16}px 20px 0` }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: T.navy, marginBottom: 4 }}>💌 타임캡슐 보관함</div>
+        <div style={{ fontSize: 13.5, color: T.gray600, marginBottom: 20 }}>가족이 장소에 방문하면 자동으로 열려요</div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {CAPSULE_DATA.map(c => (
+            <Card key={c.id} style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center' }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+                background: c.locked ? T.primaryLight : '#E8F5E9',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
+              }}>{c.locked ? '🔒' : '🔓'}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 700, color: T.navy }}>{c.spot}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: T.primary, background: T.primaryLight, borderRadius: 6, padding: '1px 7px' }}>{c.day}</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: T.gray600, marginTop: 4 }}>{c.type} {c.msg}</div>
+                <div style={{ fontSize: 11.5, marginTop: 4, fontWeight: 600, color: c.locked ? T.gray400 : T.success }}>
+                  {c.locked ? '🔒 위치 근처에 오면 열려요' : '🔓 열람 가능 — 탭해서 보기'}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        <button onClick={onGoWrite} style={{
+          width: '100%', marginTop: 16, height: 52, borderRadius: 14,
+          border: `1.5px dashed ${T.primary}`, background: T.primaryLight,
+          color: T.primaryDark, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: T.font,
+        }}>+ 새 타임캡슐 남기기</button>
+        <div style={{ height: 24 }} />
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { BottomTabBar, LiveTab, CapsuleListTab });
+  </script>
+  <script type="text/babel">
+// @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
+
+/* BEGIN USAGE */
+// tweaks-panel.jsx
+// Reusable Tweaks shell + form-control helpers.
+// Exports (to window): useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider,
+//   TweakToggle, TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton.
+//
+// Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
+// posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
+// individual prototypes don't re-roll it. Ships a consistent set of controls so you
+// don't hand-draw <input type="range">, segmented radios, steppers, etc.
+//
+// Usage (in an HTML file that loads React + Babel):
+//
+//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+//     "primaryColor": "#D97757",
+//     "palette": ["#D97757", "#29261b", "#f6f4ef"],
+//     "fontSize": 16,
+//     "density": "regular",
+//     "dark": false
+//   }/*EDITMODE-END*/;
+//
+//   function App() {
+//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+//     return (
+//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
+//         Hello
+//         <TweaksPanel>
+//           <TweakSection label="Typography" />
+//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
+//                        onChange={(v) => setTweak('fontSize', v)} />
+//           <TweakRadio  label="Density" value={t.density}
+//                        options={['compact', 'regular', 'comfy']}
+//                        onChange={(v) => setTweak('density', v)} />
+//           <TweakSection label="Theme" />
+//           <TweakColor  label="Primary" value={t.primaryColor}
+//                        options={['#D97757', '#2A6FDB', '#1F8A5B', '#7A5AE0']}
+//                        onChange={(v) => setTweak('primaryColor', v)} />
+//           <TweakColor  label="Palette" value={t.palette}
+//                        options={[['#D97757', '#29261b', '#f6f4ef'],
+//                                  ['#475569', '#0f172a', '#f1f5f9']]}
+//                        onChange={(v) => setTweak('palette', v)} />
+//           <TweakToggle label="Dark mode" value={t.dark}
+//                        onChange={(v) => setTweak('dark', v)} />
+//         </TweaksPanel>
+//       </div>
+//     );
+//   }
+//
+// TweakRadio is the segmented control for 2–3 short options (auto-falls-back to
+// TweakSelect past ~16/~10 chars per label); reach for TweakSelect directly when
+// options are many or long. For color tweaks always curate 3-4 options rather than
+// a free picker; an option can also be a whole 2–5 color palette (the stored value
+// is the array). The Tweak* controls are a floor, not a ceiling — build custom
+// controls inside the panel if a tweak calls for UI they don't cover.
+/* END USAGE */
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    transform:scale(var(--dc-inv-zoom,1));transform-origin:bottom right;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;
+    overflow-wrap:anywhere}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;box-sizing:border-box;min-width:0;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+
+  .twk-chips{display:flex;gap:6px}
+  .twk-chip{position:relative;appearance:none;flex:1;min-width:0;height:46px;
+    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:default;
+    box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
+    transition:transform .12s cubic-bezier(.3,.7,.4,1),box-shadow .12s}
+  .twk-chip:hover{transform:translateY(-1px);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.12)}
+  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px rgba(0,0,0,.85),
+    0 2px 6px rgba(0,0,0,.15)}
+  .twk-chip>span{position:absolute;top:0;bottom:0;right:0;width:34%;
+    display:flex;flex-direction:column;box-shadow:-1px 0 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i{flex:1;box-shadow:0 -1px 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i:first-child{box-shadow:none}
+  .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
+  // useState-style call doesn't write a "[object Object]" key into the persisted
+  // JSON block.
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    // Same-window signal so in-page listeners (deck-stage rail thumbnails)
+    // can react — the parent message only reaches the host, not peers.
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel" data-omelette-chrome=""
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">
+          {children}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  // Segments wrap mid-word once per-segment width runs out. The track is
+  // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
+  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
+  // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
+  // back to a dropdown rather than wrap.
+  const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
+  const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
+  const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
+  if (!fitsAsSegments) {
+    // <select> emits strings — map back to the original option value so the
+    // fallback stays type-preserving (numbers, booleans) like the segment path.
+    const resolve = (s) => {
+      const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
+      return m === undefined ? s : typeof m === 'object' ? m.value : m;
+    };
+    return <TweakSelect label={label} value={value} options={options}
+                        onChange={(s) => onChange(resolve(s))} />;
+  }
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+// Relative-luminance contrast pick — checkmarks drawn over a swatch need to
+// read on both #111 and #fafafa without per-option configuration. Hex input
+// only (#rgb / #rrggbb); named or rgb()/hsl() colors fall through to "light".
+function __twkIsLight(hex) {
+  const h = String(hex).replace('#', '');
+  const x = h.length === 3 ? h.replace(/./g, (c) => c + c) : h.padEnd(6, '0');
+  const n = parseInt(x.slice(0, 6), 16);
+  if (Number.isNaN(n)) return true;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return r * 299 + g * 587 + b * 114 > 148000;
+}
+
+const __TwkCheck = ({ light }) => (
+  <svg viewBox="0 0 14 14" aria-hidden="true">
+    <path d="M3 7.2 5.8 10 11 4.2" fill="none" strokeWidth="2.2"
+          strokeLinecap="round" strokeLinejoin="round"
+          stroke={light ? 'rgba(0,0,0,.78)' : '#fff'} />
+  </svg>
+);
+
+// TweakColor — curated color/palette picker. Each option is either a single
+// hex string or an array of 1-5 hex strings; the card adapts — a lone color
+// renders solid, a palette renders colors[0] as the hero (left ~2/3) with the
+// rest stacked in a sharp column on the right. onChange emits the
+// option in the shape it was passed (string stays string, array stays array).
+// Without options it falls back to the native color input for back-compat.
+function TweakColor({ label, value, options, onChange }) {
+  if (!options || !options.length) {
+    return (
+      <div className="twk-row twk-row-h">
+        <div className="twk-lbl"><span>{label}</span></div>
+        <input type="color" className="twk-swatch" value={value}
+               onChange={(e) => onChange(e.target.value)} />
+      </div>
+    );
+  }
+  // Native <input type=color> emits lowercase hex per the HTML spec, so
+  // compare case-insensitively. String() guards JSON.stringify(undefined),
+  // which returns the primitive undefined (no .toLowerCase).
+  const key = (o) => String(JSON.stringify(o)).toLowerCase();
+  const cur = key(value);
+  return (
+    <TweakRow label={label}>
+      <div className="twk-chips" role="radiogroup">
+        {options.map((o, i) => {
+          const colors = Array.isArray(o) ? o : [o];
+          const [hero, ...rest] = colors;
+          const sup = rest.slice(0, 4);
+          const on = key(o) === cur;
+          return (
+            <button key={i} type="button" className="twk-chip" role="radio"
+                    aria-checked={on} data-on={on ? '1' : '0'}
+                    aria-label={colors.join(', ')} title={colors.join(' · ')}
+                    style={{ background: hero }}
+                    onClick={() => onChange(o)}>
+              {sup.length > 0 && (
+                <span>
+                  {sup.map((c, j) => <i key={j} style={{ background: c }} />)}
+                </span>
+              )}
+              {on && <__TwkCheck light={__twkIsLight(hero)} />}
+            </button>
+          );
+        })}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});
+  </script>
+  <script type="text/babel">
+// @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
+
+/* BEGIN USAGE */
+// iOS.jsx — Simplified iOS 26 (Liquid Glass) device frame
+// Based on the iOS 26 UI Kit + Figma status bar spec. No assets, no deps.
+// Exports (to window): IOSDevice, IOSStatusBar, IOSNavBar, IOSGlassPill, IOSList, IOSListRow, IOSKeyboard
+//
+// Usage — wrap your screen content in <IOSDevice> to get the bezel, status bar
+// and home indicator (props: title, dark, keyboard):
+//
+//   <IOSDevice title="Settings">
+//     ...your screen content...
+//   </IOSDevice>
+//   <IOSDevice dark title="Search" keyboard>…</IOSDevice>
+/* END USAGE */
+
+// ─────────────────────────────────────────────────────────────
+// Status bar
+// ─────────────────────────────────────────────────────────────
+function IOSStatusBar({ dark = false, time = '9:41' }) {
+  const c = dark ? '#fff' : '#000';
+  return (
+    <div style={{
+      display: 'flex', gap: 154, alignItems: 'center', justifyContent: 'center',
+      padding: '21px 24px 19px', boxSizing: 'border-box',
+      position: 'relative', zIndex: 20, width: '100%',
+    }}>
+      <div style={{ flex: 1, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 1.5 }}>
+        <span style={{
+          fontFamily: '-apple-system, "SF Pro", system-ui', fontWeight: 590,
+          fontSize: 17, lineHeight: '22px', color: c,
+        }}>{time}</span>
+      </div>
+      <div style={{ flex: 1, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, paddingTop: 1, paddingRight: 1 }}>
+        <svg width="19" height="12" viewBox="0 0 19 12">
+          <rect x="0" y="7.5" width="3.2" height="4.5" rx="0.7" fill={c}/>
+          <rect x="4.8" y="5" width="3.2" height="7" rx="0.7" fill={c}/>
+          <rect x="9.6" y="2.5" width="3.2" height="9.5" rx="0.7" fill={c}/>
+          <rect x="14.4" y="0" width="3.2" height="12" rx="0.7" fill={c}/>
+        </svg>
+        <svg width="17" height="12" viewBox="0 0 17 12">
+          <path d="M8.5 3.2C10.8 3.2 12.9 4.1 14.4 5.6L15.5 4.5C13.7 2.7 11.2 1.5 8.5 1.5C5.8 1.5 3.3 2.7 1.5 4.5L2.6 5.6C4.1 4.1 6.2 3.2 8.5 3.2Z" fill={c}/>
+          <path d="M8.5 6.8C9.9 6.8 11.1 7.3 12 8.2L13.1 7.1C11.8 5.9 10.2 5.1 8.5 5.1C6.8 5.1 5.2 5.9 3.9 7.1L5 8.2C5.9 7.3 7.1 6.8 8.5 6.8Z" fill={c}/>
+          <circle cx="8.5" cy="10.5" r="1.5" fill={c}/>
+        </svg>
+        <svg width="27" height="13" viewBox="0 0 27 13">
+          <rect x="0.5" y="0.5" width="23" height="12" rx="3.5" stroke={c} strokeOpacity="0.35" fill="none"/>
+          <rect x="2" y="2" width="20" height="9" rx="2" fill={c}/>
+          <path d="M25 4.5V8.5C25.8 8.2 26.5 7.2 26.5 6.5C26.5 5.8 25.8 4.8 25 4.5Z" fill={c} fillOpacity="0.4"/>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Liquid glass pill — blur + tint + shine
+// ─────────────────────────────────────────────────────────────
+function IOSGlassPill({ children, dark = false, style = {} }) {
+  return (
+    <div style={{
+      height: 44, minWidth: 44, borderRadius: 9999,
+      position: 'relative', overflow: 'hidden',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: dark
+        ? '0 2px 6px rgba(0,0,0,0.35), 0 6px 16px rgba(0,0,0,0.2)'
+        : '0 1px 3px rgba(0,0,0,0.07), 0 3px 10px rgba(0,0,0,0.06)',
+      ...style,
+    }}>
+      {/* blur + tint */}
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 9999,
+        backdropFilter: 'blur(12px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(180%)',
+        background: dark ? 'rgba(120,120,128,0.28)' : 'rgba(255,255,255,0.5)',
+      }} />
+      {/* shine */}
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 9999,
+        boxShadow: dark
+          ? 'inset 1.5px 1.5px 1px rgba(255,255,255,0.15), inset -1px -1px 1px rgba(255,255,255,0.08)'
+          : 'inset 1.5px 1.5px 1px rgba(255,255,255,0.7), inset -1px -1px 1px rgba(255,255,255,0.4)',
+        border: dark ? '0.5px solid rgba(255,255,255,0.15)' : '0.5px solid rgba(0,0,0,0.06)',
+      }} />
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', padding: '0 4px' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Navigation bar — glass pills + large title
+// ─────────────────────────────────────────────────────────────
+function IOSNavBar({ title = 'Title', dark = false, trailingIcon = true }) {
+  const muted = dark ? 'rgba(255,255,255,0.6)' : '#404040';
+  const text = dark ? '#fff' : '#000';
+  const pillIcon = (content) => (
+    <IOSGlassPill dark={dark}>
+      <div style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {content}
+      </div>
+    </IOSGlassPill>
+  );
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 10,
+      paddingTop: 62, paddingBottom: 10, position: 'relative', zIndex: 5,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 16px',
+      }}>
+        {/* back chevron */}
+        {pillIcon(
+          <svg width="12" height="20" viewBox="0 0 12 20" fill="none" style={{ marginLeft: -1 }}>
+            <path d="M10 2L2 10l8 8" stroke={muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+        {/* trailing ellipsis */}
+        {trailingIcon && pillIcon(
+          <svg width="22" height="6" viewBox="0 0 22 6">
+            <circle cx="3" cy="3" r="2.5" fill={muted}/>
+            <circle cx="11" cy="3" r="2.5" fill={muted}/>
+            <circle cx="19" cy="3" r="2.5" fill={muted}/>
+          </svg>
+        )}
+      </div>
+      {/* large title */}
+      <div style={{
+        padding: '0 16px',
+        fontFamily: '-apple-system, system-ui',
+        fontSize: 34, fontWeight: 700, lineHeight: '41px',
+        color: text, letterSpacing: 0.4,
+      }}>{title}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Grouped list (inset card, r:26) + row (52px)
+// ─────────────────────────────────────────────────────────────
+function IOSListRow({ title, detail, icon, chevron = true, isLast = false, dark = false }) {
+  const text = dark ? '#fff' : '#000';
+  const sec = dark ? 'rgba(235,235,245,0.6)' : 'rgba(60,60,67,0.6)';
+  const ter = dark ? 'rgba(235,235,245,0.3)' : 'rgba(60,60,67,0.3)';
+  const sep = dark ? 'rgba(84,84,88,0.65)' : 'rgba(60,60,67,0.12)';
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', minHeight: 52,
+      padding: '0 16px', position: 'relative',
+      fontFamily: '-apple-system, system-ui', fontSize: 17,
+      letterSpacing: -0.43,
+    }}>
+      {icon && (
+        <div style={{
+          width: 30, height: 30, borderRadius: 7, background: icon,
+          marginRight: 12, flexShrink: 0,
+        }} />
+      )}
+      <div style={{ flex: 1, color: text }}>{title}</div>
+      {detail && <span style={{ color: sec, marginRight: 6 }}>{detail}</span>}
+      {chevron && (
+        <svg width="8" height="14" viewBox="0 0 8 14" style={{ flexShrink: 0 }}>
+          <path d="M1 1l6 6-6 6" stroke={ter} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )}
+      {!isLast && (
+        <div style={{
+          position: 'absolute', bottom: 0, right: 0,
+          left: icon ? 58 : 16, height: 0.5, background: sep,
+        }} />
+      )}
+    </div>
+  );
+}
+
+function IOSList({ header, children, dark = false }) {
+  const hc = dark ? 'rgba(235,235,245,0.6)' : 'rgba(60,60,67,0.6)';
+  const bg = dark ? '#1C1C1E' : '#fff';
+  return (
+    <div>
+      {header && (
+        <div style={{
+          fontFamily: '-apple-system, system-ui', fontSize: 13,
+          color: hc, textTransform: 'uppercase',
+          padding: '8px 36px 6px', letterSpacing: -0.08,
+        }}>{header}</div>
+      )}
+      <div style={{
+        background: bg, borderRadius: 26,
+        margin: '0 16px', overflow: 'hidden',
+      }}>{children}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Device frame
+// ─────────────────────────────────────────────────────────────
+function IOSDevice({
+  children, width = 402, height = 874, dark = false,
+  title, keyboard = false,
+}) {
+  return (
+    <div style={{
+      width, height, borderRadius: 48, overflow: 'hidden',
+      position: 'relative', background: dark ? '#000' : '#F2F2F7',
+      boxShadow: '0 40px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.12)',
+      fontFamily: '-apple-system, system-ui, sans-serif',
+      WebkitFontSmoothing: 'antialiased',
+    }}>
+      {/* dynamic island */}
+      <div style={{
+        position: 'absolute', top: 11, left: '50%', transform: 'translateX(-50%)',
+        width: 126, height: 37, borderRadius: 24, background: '#000', zIndex: 50,
+      }} />
+      {/* status bar (absolute) */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
+        <IOSStatusBar dark={dark} />
+      </div>
+      {/* nav + content */}
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        {title !== undefined && <IOSNavBar title={title} dark={dark} />}
+        <div style={{ flex: 1, overflow: 'auto' }}>{children}</div>
+        {keyboard && <IOSKeyboard dark={dark} />}
+      </div>
+      {/* home indicator — always on top */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 60,
+        height: 34, display: 'flex', justifyContent: 'center', alignItems: 'flex-end',
+        paddingBottom: 8, pointerEvents: 'none',
+      }}>
+        <div style={{
+          width: 139, height: 5, borderRadius: 100,
+          background: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.25)',
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Keyboard — iOS 26 liquid glass
+// ─────────────────────────────────────────────────────────────
+function IOSKeyboard({ dark = false }) {
+  const glyph = dark ? 'rgba(255,255,255,0.7)' : '#595959';
+  const sugg = dark ? 'rgba(255,255,255,0.6)' : '#333';
+  const keyBg = dark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.85)';
+
+  // special-key icons
+  const icons = {
+    shift: <svg width="19" height="17" viewBox="0 0 19 17"><path d="M9.5 1L1 9.5h4.5V16h8V9.5H18L9.5 1z" fill={glyph}/></svg>,
+    del: <svg width="23" height="17" viewBox="0 0 23 17"><path d="M7 1h13a2 2 0 012 2v11a2 2 0 01-2 2H7l-6-7.5L7 1z" fill="none" stroke={glyph} strokeWidth="1.6" strokeLinejoin="round"/><path d="M10 5l7 7M17 5l-7 7" stroke={glyph} strokeWidth="1.6" strokeLinecap="round"/></svg>,
+    ret: <svg width="20" height="14" viewBox="0 0 20 14"><path d="M18 1v6H4m0 0l4-4M4 7l4 4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  };
+
+  const key = (content, { w, flex, ret, fs = 25, k } = {}) => (
+    <div key={k} style={{
+      height: 42, borderRadius: 8.5,
+      flex: flex ? 1 : undefined, width: w, minWidth: 0,
+      background: ret ? '#08f' : keyBg,
+      boxShadow: '0 1px 0 rgba(0,0,0,0.075)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: '-apple-system, "SF Compact", system-ui',
+      fontSize: fs, fontWeight: 458, color: ret ? '#fff' : glyph,
+    }}>{content}</div>
+  );
+
+  const row = (keys, pad = 0) => (
+    <div style={{ display: 'flex', gap: 6.5, justifyContent: 'center', padding: `0 ${pad}px` }}>
+      {keys.map(l => key(l, { flex: true, k: l }))}
+    </div>
+  );
+
+  return (
+    <div style={{
+      position: 'relative', zIndex: 15, borderRadius: 27, overflow: 'hidden',
+      padding: '11px 0 2px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      boxShadow: dark
+        ? '0 -2px 20px rgba(0,0,0,0.09)'
+        : '0 -1px 6px rgba(0,0,0,0.018), 0 -3px 20px rgba(0,0,0,0.012)',
+    }}>
+      {/* liquid glass bg — same recipe as nav pills */}
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 27,
+        backdropFilter: 'blur(12px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(180%)',
+        background: dark ? 'rgba(120,120,128,0.14)' : 'rgba(255,255,255,0.25)',
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 27,
+        boxShadow: dark
+          ? 'inset 1.5px 1.5px 1px rgba(255,255,255,0.15)'
+          : 'inset 1.5px 1.5px 1px rgba(255,255,255,0.7), inset -1px -1px 1px rgba(255,255,255,0.4)',
+        border: dark ? '0.5px solid rgba(255,255,255,0.15)' : '0.5px solid rgba(0,0,0,0.06)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* autocorrect bar */}
+      <div style={{
+        display: 'flex', gap: 20, alignItems: 'center',
+        padding: '8px 22px 13px', width: '100%', boxSizing: 'border-box',
+        position: 'relative',
+      }}>
+        {['"The"', 'the', 'to'].map((w, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <div style={{ width: 1, height: 25, background: '#ccc', opacity: 0.3 }} />}
+            <div style={{
+              flex: 1, textAlign: 'center',
+              fontFamily: '-apple-system, system-ui', fontSize: 17,
+              color: sugg, letterSpacing: -0.43, lineHeight: '22px',
+            }}>{w}</div>
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* key layout */}
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 13,
+        padding: '0 6.5px', width: '100%', boxSizing: 'border-box',
+        position: 'relative',
+      }}>
+        {row(['q','w','e','r','t','y','u','i','o','p'])}
+        {row(['a','s','d','f','g','h','j','k','l'], 20)}
+        <div style={{ display: 'flex', gap: 14.25, alignItems: 'center' }}>
+          {key(icons.shift, { w: 45, k: 'shift' })}
+          <div style={{ display: 'flex', gap: 6.5, flex: 1 }}>
+            {['z','x','c','v','b','n','m'].map(l => key(l, { flex: true, k: l }))}
+          </div>
+          {key(icons.del, { w: 45, k: 'del' })}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {key('ABC', { w: 92.25, fs: 18, k: 'abc' })}
+          {key('', { flex: true, k: 'space' })}
+          {key(icons.ret, { w: 92.25, ret: true, k: 'ret' })}
+        </div>
+      </div>
+
+      {/* bottom spacer (emoji+mic area, icons omitted) */}
+      <div style={{ height: 56, width: '100%', position: 'relative' }} />
+    </div>
+  );
+}
+
+Object.assign(window, {
+  IOSDevice, IOSStatusBar, IOSNavBar, IOSGlassPill, IOSList, IOSListRow, IOSKeyboard,
+});
+  </script>
+  <script type="text/babel">
+// masil-app.jsx — App shell: FlowStrip · HandoffPanel · screen router · Tweaks
+const { useState: useSA, useEffect: useEA } = React;
+
+/* ───── HANDOFF DATA (per screen) ───── */
+const HANDOFF = {
+  splash: {
+    frd: 'SCREEN-00', section: '진입', title: 'Splash',
+    purpose: '앱 실행 시 브랜드 인상 + FCM 토큰 초기화. 700ms FadeIn 후 2200ms 뒤 자동 전환.',
+    data: ['앱 아이콘 100×100 + 워드마크 이미지', '서브타이틀 14sp navySub', 'FadeTransition 700ms → 2200ms auto-pop', 'GET /api/v1/me 로 사용자 확인 후 온보딩/홈 분기'],
+    service: '앱 실행 → FCM 토큰 등록 → GET /me 세션 확인 → Onboarding/Home 분기',
+    api: { method: 'GET', endpoint: '/api/v1/me' },
+    db: 'users(id, role ENUM(PATIENT/FAMILY/CAREGIVER/ADMIN), display_name, push_token) / notification_settings(push_token)',
+    req: null,
+    res: `{ "success": true, "data": { "userId": 1, "role": "PATIENT", "displayName": "홍길동" } }`,
+  },
+  onboarding: {
+    frd: 'SCREEN-01', section: '진입', title: 'Onboarding (4p)',
+    purpose: '서비스 핵심 가치(AI 맞춤 코스·무장애·타임캡슐)를 4페이지 PageView로 소개. Flutter는 /api/v1 내부 API만 호출.',
+    data: ['4페이지 PageView · 180px 원형 이모지 + 배경색', '타이틀 26sp/700 · 설명 15sp · 키워드 primary Bold', 'SmoothPageIndicator', '건너뛰기 / 소원여행 시작하기 CTA'],
+    service: '완료 플래그 → SharedPreferences 저장 → Condition 화면 이동',
+    api: { method: 'GET', endpoint: '/api/v1/reference/stamina-levels' },
+    db: 'patient_profiles(user_id FK unique, default_mobility_aid, default_stamina_level, default_origin_label, default_origin_point geography)',
+    req: null,
+    res: null,
+  },
+  condition: {
+    frd: 'F01-01 ~ F01-05', section: '의료조건', title: '신체 조건 입력 (5스텝)',
+    purpose: '이동거리·보조기기·투약시간·체력·동행 정보를 5단계로 수집해 생성 요청에 포함.',
+    data: [
+      'Step 1 (F01-01): origin {label, address, lat/lng} + maxTravelDistanceKm 1~50',
+      'Step 2 (F01-02): mobilityAid  NONE | WHEELCHAIR | WALKER',
+      'Step 3 (F01-03): medicationWindows [{startTime, endTime}] — 투약 회피 시간 배열',
+      'Step 4 (F01-04): staminaLevel  EASY(20km) | NORMAL(12km) | TIRED(5km)',
+      'Step 5 (F01-05): companion {totalCount, caregiverPresent, wheelchairAssistAvailable, vehicleAvailable, emergencyContact}',
+      '※ TourAPI locationBasedList2 radius 최대 20km → 초과 시 분할/지역 조회',
+    ],
+    service: 'POST /trip-drafts 로 조건 저장 → DRAFT 상태 → Wish 입력 → /generate 호출 시 서버 계산',
+    api: { method: 'POST', endpoint: '/api/v1/trip-drafts' },
+    db: `trip_request_conditions(trip_request_id FK unique, origin_label, origin_point geography(Point,4326), max_travel_distance_km numeric, mobility_aid mobility_aid, stamina_level stamina_level, medication_windows JSONB, companion_info JSONB)
+place_accessibilities(tour_content_id, wheelchair, exit_info, elevator, restroom, parking, raw_payload JSONB, fetched_at)`,
+    req: `{
+  "patientId": 1,
+  "medicalCondition": {
+    "origin": { "label": "서울역", "latitude": 37.5547, "longitude": 126.9706 },
+    "maxTravelDistanceKm": 12,
+    "mobilityAid": "WHEELCHAIR",
+    "medicationWindows": [{ "startTime": "13:00", "endTime": "14:00" }],
+    "staminaLevel": "NORMAL",
+    "companion": {
+      "totalCount": 3,
+      "caregiverPresent": true,
+      "wheelchairAssistAvailable": true,
+      "vehicleAvailable": true,
+      "emergencyContact": "010-0000-0000"
+    }
+  },
+  "wish": { "themes": ["SEA", "FOOD"], "wishText": "...", "preferredRegions": ["GANGWON"], "startDate": "2026-06-12", "endDate": "2026-06-14" }
+}`,
+    res: `{ "success": true, "data": { "draftId": 1001, "status": "DRAFT", "travelDays": 3 } }`,
+  },
+  wish: {
+    frd: 'F03-01 ~ F03-04', section: '소원입력', title: '소원 여행 설정 (4스텝)',
+    purpose: '테마·소원 텍스트·지역·날짜 수집 후 /generate 로 TourAPI 후보 조회 + Gemini 생성 시작.',
+    data: [
+      'Step 1 (F03-01): themes[] — SEA, SPA, FLOWER, NATURE, CULTURE, FOOD 등 (GET /reference/themes 코드)',
+      'Step 2 (F03-02): wishText — 자유 입력. 키워드 추출·위험 활동 감지에 사용. 장소 직접 생성 불가',
+      'Step 3 (F03-03): preferredRegions[] — GET /reference/regions 코드, TourAPI 법정동 코드 매핑',
+      'Step 4 (F03-04): startDate, endDate — 앱은 날짜만 전송, travelDays는 서버 계산',
+    ],
+    service: `1. POST /trip-drafts 로 조건+소원 저장 (status: DRAFT)
+2. POST /trip-drafts/{draftId}/generate 로 후보 조회 + AI 생성 시작 (status: PENDING)`,
+    api: { method: 'POST', endpoint: '/api/v1/trip-drafts/{draftId}/generate' },
+    db: `trip_requests(id, patient_user_id, wish_text, start_date, end_date, travel_days, status trip_request_status)
+trip_request_regions(trip_request_id, region_code, tour_region_code)
+trip_request_themes(trip_request_id, theme_code)`,
+    req: `// Step 1: POST /api/v1/trip-drafts (조건+소원 저장)
+{ "wish": { "themes": ["SEA","FOOD"], "wishText": "가족과 조용한 바다...", "preferredRegions": ["GANGWON"], "startDate": "2026-06-12", "endDate": "2026-06-14" } }
+
+// Step 2: POST /api/v1/trip-drafts/{draftId}/generate (생성 시작)`,
+    res: `{ "success": true, "data": { "jobId": 501, "draftId": 1001, "status": "PENDING" } }`,
+  },
+  loading: {
+    frd: 'F03-05 ~ F03-07', section: 'AI생성', title: 'AI 플랜 생성 중',
+    purpose: 'TourAPI 후보 조회·필터링·Gemini 생성·검증 진행. 대기 중 후보 카드 캐러셀로 UX 해소.',
+    data: [
+      'progressPercent — 게이지로 표시 (세부 단계명은 내부용)',
+      'generationStage — FETCHING_CANDIDATES → FILTERING_CANDIDATES → GENERATING → VALIDATING → READY',
+      'candidatePreviewCards — contentId, title, thumbnail, distanceMeters, 접근성 배지',
+      'validationReport — 후보 외 장소, 위험 활동, 접근성 위반, 투약 충돌 검증 결과',
+      '※ Flutter는 /status 를 2초 폴링. Redis에 진행률 임시 저장.',
+    ],
+    service: `TourAPI KorWithService2: locationBasedList2 후보 조회
+→ detailWithTour2 무장애 상세 (wheelchair, exit, restroom, elevator, parking)
+→ 의료조건 기반 후보 필터링 (CandidateFilterPolicy)
+→ 필터링 후보만 Gemini 전달 (후보 외 장소 생성 불가)
+→ 서버 검증 (PlanValidationPolicy) → READY or FAILED`,
+    api: { method: 'GET', endpoint: '/api/v1/trip-drafts/{draftId}/status' },
+    db: `place_candidates(trip_request_id, tour_content_id UNIQUE, title, location geography, distance_meters, thumbnail_url, raw_payload JSONB)
+place_accessibilities(tour_content_id UNIQUE, wheelchair, exit_info, elevator, restroom, raw_payload JSONB)
+candidate_filter_results(trip_request_id, place_candidate_id, decision ENUM(KEPT/EXCLUDED/DOWNRANKED), reason_code, score)
+ai_generation_jobs(trip_request_id, status, attempt_count, progress_percent, raw_response JSONB, validation_report JSONB)
+Redis: tourapi:location:{hash} TTL 1h / tourapi:detail:{id} TTL 24h / trip-generate:lock:{id} TTL 5m`,
+    req: null,
+    res: `{
+  "data": {
+    "draftId": 1001, "jobId": 501,
+    "status": "GENERATING",
+    "progressPercent": 74,
+    "message": "후보 장소 안에서 일정을 구성하고 있어요.",
+    "planId": null
+  }
+}`,
+  },
+  plan: {
+    frd: 'F04-01 ~ F04-05 v2.0', section: '플랜결과', title: 'AI 여행 플랜 결과',
+    purpose: '서버 검증 통과 플랜만 표시. 바텀 탭바(📋/📍/💌), 지도 항상 고정, 의료시설 바텀시트 포함.',
+    data: [
+      '📋 플랜: days[].stops[] — PLACE/MEAL/REST/MEDICATION/MOVE/RETURN 타입',
+      '📋 플랜: safetySummary {candidateOnly, medicationConflictFree, accessibilityChecked, unsafeActivityExcluded}',
+      '📋 플랜: GET /medical-facilities?radiusMeters=3000 → HOSPITAL/PHARMACY/EMERGENCY (HIRA)',
+      '📋 플랜: GET /naver-route → appDeepLinkUrl + webUrl + fallbackAddresses',
+      '📍 지금탭: GPS 폴링 → 트리거(지연/복약/날씨/피로) → 알림 → 수락 시 재조정',
+      '💌 추억탭: 타임캡슐 보관함 (봉인🔒/열람🔓)',
+      'BottomTabBar: 플로팅 카드 · SVG 라인 아이콘 · 활성 pill 배경',
+    ],
+    service: `GET /trip-plans/{planId} → TourAPI detailImage2 이미지
+→ GET /medical-facilities (HIRA getHospBasisList1 + getParmacyBasisList)
+→ GET /naver-route (딥링크 우선, 미설치 시 웹URL/주소 폴백)
+→ POST /share (token_hash만 저장, 원문 저장 금지)
+※ HIRA 약국 API: getParmacyBasisList (Parmacy 철자 — 문서 표기 준수)`,
+    api: { method: 'GET', endpoint: '/api/v1/trip-plans/{planId}' },
+    db: `trip_plans(id, trip_request_id FK, title, summary, start_date, end_date, travel_days, validation_status, safety_summary JSONB)
+trip_plan_days(id, trip_plan_id, day_number, date, summary)
+trip_plan_stops(id, trip_plan_day_id, place_candidate_id nullable, stop_type plan_stop_type, title, start_time, end_time, stay_minutes, notes)
+medical_facilities(id, facility_type ENUM(HOSPITAL/PHARMACY/EMERGENCY), name, location geography, phone, opening_hours_raw, raw_payload JSONB)
+trip_plan_medical_facilities(trip_plan_id, medical_facility_id, nearest_stop_id, distance_meters)
+share_links(id, trip_plan_id, token_hash UNIQUE, permission READ_ONLY, expires_at)`,
+    req: null,
+    res: `{
+  "data": {
+    "planId": 2001, "title": "강릉 바다 쉼 여행",
+    "validationStatus": "PASSED",
+    "safetySummary": { "candidateOnly": true, "medicationConflictFree": true },
+    "days": [{ "dayNumber": 1, "date": "2026-06-12",
+      "stops": [
+        { "stopId": 3001, "type": "PLACE", "startTime": "10:00", "endTime": "11:10",
+          "place": { "tourContentId": "1604824", "title": "안목해변 카페거리",
+            "accessibilityBadges": ["WHEELCHAIR_INFO","RESTROOM_INFO"] } },
+        { "stopId": 3002, "type": "MEDICATION", "startTime": "13:00", "endTime": "14:00" }
+      ]
+    }]
+  }
+}`,
+  },
+  checkin: {
+    frd: 'F04-06', section: '실행·공유', title: '당일 컨디션 체크인',
+    purpose: '당일 아침 컨디션 확인 후 EASY 유지 / NORMAL 스팟 조정 / TIRED 경량 재생성.',
+    data: [
+      'conditionLevel — EASY(좋아요) | NORMAL(보통) | TIRED(힘들어요)',
+      'keepPlaceCandidateId — 꼭 유지할 후보 장소 candidateId',
+      'excludedStopIds — 제외 요청 stop ID 목록',
+      'currentLocation — {latitude, longitude}',
+      '재조정 후 GET /plan-adjustments/{adjustmentId}/status → /result 폴링',
+    ],
+    service: `푸시 알림 탭 → POST /adjustments
+→ EASY: 플랜 유지 출발
+→ NORMAL: 스팟 제외 + TourAPI 재조회 + Gemini 재생성
+→ TIRED: 반경 TIRED(5km) 기준 경량 플랜 재생성
+→ GET /plan-adjustments/{id}/status 폴링 → /result`,
+    api: { method: 'POST', endpoint: '/api/v1/trip-plans/{planId}/adjustments' },
+    db: `plan_adjustments(id, original_trip_plan_id FK, result_trip_plan_id FK nullable, condition_level stamina_level, keep_place_candidate_id FK nullable, excluded_stop_ids JSONB, status trip_request_status, created_at)`,
+    req: `{
+  "conditionLevel": "NORMAL",
+  "keepPlaceCandidateId": 9001,
+  "excludedStopIds": [3005],
+  "currentLocation": { "latitude": 37.771, "longitude": 128.947 }
+}`,
+    res: `{ "data": { "adjustmentId": 6001, "status": "PENDING", "message": "컨디션에 맞춰 가까운 일정으로 다시 만들고 있어요." } }`,
+  },
+  'capsule-spots': {
+    frd: 'F05-01 ~ F05-04', section: '실행·공유', title: '타임캡슐 — 장소 선택',
+    purpose: '플랜 stop 중 추억을 남길 장소를 최대 3개 선택. tripPlanStopId 기준으로 연결.',
+    data: ['tripPlanStopId — trip_plan_stops.id 기준', '최대 3개 선택 (unlock_radius_meters 기본 100m)', '지오펜싱 안내 배너'],
+    service: '스팟 선택 → 타임캡슐 작성 이동',
+    api: null,
+    db: `time_capsules(id, creator_user_id FK, trip_plan_stop_id FK, location geography(Point,4326), unlock_radius_meters INT DEFAULT 100, expires_at TIMESTAMPTZ)`,
+    req: null, res: null,
+  },
+  'capsule-write': {
+    frd: 'F05-05 ~ F05-10', section: '실행·공유', title: '타임캡슐 — 콘텐츠 작성',
+    purpose: '음성·편지·사진 + 열람 가족 지정 → Firebase Storage 업로드 → Geofencing 등록 → 1년 보관.',
+    data: [
+      '🎤 음성 최대 2분 — POST /time-capsules/{id}/attachments 로 storage URL 발급',
+      '✉️ 편지 텍스트 — text_body 직접 저장',
+      '📷 사진 최대 3장 — storage_objects.object_key',
+      '열람 가족 — time_capsule_recipients.family_user_id',
+      'unlock_radius_meters: 100m · expires_at: +1년',
+      '저장소 추상화: storage_objects (FIREBASE_STORAGE | S3_COMPATIBLE)',
+    ],
+    service: '파일 → POST /attachments (업로드 URL 발급) → Firebase Storage 업로드 → Geofencing 등록 → FCM 알림(열람 가족)',
+    api: { method: 'POST', endpoint: '/api/v1/time-capsules' },
+    db: `time_capsules(id, trip_plan_stop_id FK, location geography, unlock_radius_meters, expires_at +1year)
+time_capsule_contents(id, time_capsule_id FK, content_type ENUM(VOICE/LETTER/PHOTO), text_body TEXT, storage_object_id FK nullable)
+time_capsule_recipients(id, time_capsule_id FK, family_user_id FK, unlocked_at, viewed_at)
+storage_objects(id, provider ENUM(FIREBASE_STORAGE/S3_COMPATIBLE), bucket, object_key, mime_type, size_bytes, delete_after)`,
+    req: `{
+  "tripPlanStopId": 3001,
+  "location": { "latitude": 37.771, "longitude": 128.947 },
+  "unlockRadiusMeters": 100,
+  "recipients": [{ "familyUserId": 2 }]
+}`,
+    res: `{ "data": { "capsuleId": 4001, "status": "SEALED", "expiresAt": "2027-06-14T00:00:00+09:00" } }`,
+  },
+};
+
+/* ───── FLOW SECTIONS ───── */
+const SECTIONS = [
+  { id: '의료조건', screens: ['condition'] },
+  { id: '소원입력', screens: ['wish'] },
+  { id: 'AI 생성',  screens: ['loading'] },
+  { id: '플랜결과', screens: ['plan'] },
+  { id: '실행·공유', screens: ['checkin', 'capsule-spots', 'capsule-write'] },
+];
+const SCREEN_SEC = {
+  condition: '의료조건', wish: '소원입력', loading: 'AI 생성',
+  plan: '플랜결과', checkin: '실행·공유', 'capsule-spots': '실행·공유', 'capsule-write': '실행·공유',
+};
+
+/* ───── FLOW STRIP ───── */
+function FlowStrip({ screen, go }) {
+  const cur = SCREEN_SEC[screen];
+  return (
+    <div style={{
+      height: 50, background: '#fff', borderBottom: `1px solid ${T.gray200}`,
+      display: 'flex', alignItems: 'center', padding: '0 20px', gap: 2,
+      flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 16, flexShrink: 0 }}>
+        <div style={{ width: 22, height: 22, borderRadius: 7, background: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>🌿</div>
+        <span style={{ fontSize: 14, fontWeight: 700, color: T.navy }}>마실</span>
+      </div>
+      {SECTIONS.map((sec, i) => (
+        <React.Fragment key={sec.id}>
+          {i > 0 && <svg width="14" height="14" style={{ flexShrink: 0 }} viewBox="0 0 14 14"><path d="M3 7h8M8 4l3 3-3 3" stroke={T.gray400} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>}
+          <button onClick={() => go(sec.screens[0])} style={{
+            padding: '6px 13px', borderRadius: 999, border: 'none', cursor: 'pointer',
+            fontFamily: T.font, fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
+            background: cur === sec.id ? T.primary : 'transparent',
+            color: cur === sec.id ? '#fff' : T.gray600,
+            transition: 'all 180ms',
+          }}>{sec.id}</button>
+        </React.Fragment>
+      ))}
+      <div style={{ flex: 1, minWidth: 16 }} />
+      <button onClick={() => go('splash')} style={{
+        padding: '6px 13px', borderRadius: 999, border: `1px solid ${T.gray200}`, background: 'transparent',
+        cursor: 'pointer', fontFamily: T.font, fontSize: 12, fontWeight: 600, color: T.gray400, whiteSpace: 'nowrap', flexShrink: 0,
+      }}>처음으로</button>
+    </div>
+  );
+}
+
+/* ───── HANDOFF PANEL ───── */
+function HandoffPanel({ screen }) {
+  const [tab, setTab] = useSA('data');
+  const d = HANDOFF[screen];
+  useEA(() => setTab('data'), [screen]);
+
+  if (!d) return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, fontFamily: T.font }}>
+      <span style={{ fontSize: 32 }}>👆</span>
+      <span style={{ fontSize: 14, color: T.gray400 }}>화면을 탭하면 설계 정보가 표시돼요</span>
+    </div>
+  );
+
+  const METHOD_COLOR = { GET: T.info, POST: T.success, PUT: T.warning, DELETE: T.error };
+  const TABS = [{ id: 'data', label: '화면 데이터' }, { id: 'service', label: '서비스 흐름' }, { id: 'api', label: 'API' }, { id: 'db', label: 'DB' }];
+
+  const tabBody = {
+    data: (
+      <ul style={{ margin: 0, padding: '0 0 0 16px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {d.data.map((item, i) => <li key={i} style={{ fontSize: 13, color: T.gray700, lineHeight: 1.55 }}>{item}</li>)}
+      </ul>
+    ),
+    service: (
+      <div style={{ fontSize: 13, color: T.gray700, lineHeight: 1.85, whiteSpace: 'pre-line' }}>{d.service}</div>
+    ),
+    api: d.api ? (
+      <div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: T.gray100, borderRadius: 9, padding: '8px 12px', marginBottom: 14 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: METHOD_COLOR[d.api.method] || T.gray600, borderRadius: 5, padding: '2px 8px' }}>{d.api.method}</span>
+          <code style={{ fontSize: 12.5, color: T.navy, fontFamily: 'ui-monospace,"SF Mono",Menlo,monospace' }}>{d.api.endpoint}</code>
+        </div>
+        {d.req && <><div style={{ fontSize: 11, fontWeight: 700, color: T.gray400, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>요청 Body</div><JsonBlock>{d.req}</JsonBlock></>}
+        {d.res && <><div style={{ fontSize: 11, fontWeight: 700, color: T.gray400, textTransform: 'uppercase', letterSpacing: 0.5, margin: '12px 0 6px' }}>응답 Body</div><JsonBlock>{d.res}</JsonBlock></>}
+        {!d.req && !d.res && <div style={{ fontSize: 13, color: T.gray400, fontStyle: 'italic' }}>body 없음</div>}
+      </div>
+    ) : <div style={{ fontSize: 13, color: T.gray400, fontStyle: 'italic' }}>이 화면에서는 API 호출이 없어요</div>,
+    db: (
+      <pre style={{ margin: 0, fontSize: 12, lineHeight: 1.75, fontFamily: 'ui-monospace,"SF Mono",Menlo,monospace', color: T.navy, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: T.gray100, borderRadius: 10, padding: '12px 14px' }}>{d.db || '—'}</pre>
+    ),
+  };
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.white, borderLeft: `1px solid ${T.gray200}`, fontFamily: T.font, overflow: 'hidden' }}>
+      {/* header */}
+      <div style={{ padding: '18px 20px 14px', borderBottom: `1px solid ${T.gray100}`, flexShrink: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.primary, letterSpacing: 0.5, marginBottom: 5 }}>{d.frd} · {d.section}</div>
+        <div style={{ fontSize: 19, fontWeight: 700, color: T.navy, marginBottom: 6 }}>{d.title}</div>
+        <div style={{ fontSize: 13, color: T.gray600, lineHeight: 1.55 }}>{d.purpose}</div>
+      </div>
+      {/* tabs */}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${T.gray200}`, flexShrink: 0 }}>
+        {TABS.map(tb => (
+          <button key={tb.id} onClick={() => setTab(tb.id)} style={{
+            flex: 1, height: 38, border: 'none', cursor: 'pointer', fontFamily: T.font,
+            fontSize: 12, fontWeight: 600, background: 'transparent',
+            color: tab === tb.id ? T.primary : T.gray400,
+            borderBottom: `2px solid ${tab === tb.id ? T.primary : 'transparent'}`,
+            transition: 'all 180ms',
+          }}>{tb.label}</button>
+        ))}
+      </div>
+      {/* body */}
+      <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {tabBody[tab]}
+      </div>
+      {/* doc links */}
+      <div style={{ borderTop: `1px solid ${T.gray100}`, padding: '10px 20px', display: 'flex', gap: 8, flexShrink: 0 }}>
+        {['API 계약', 'DB 명세', 'FRD 문서'].map(l => (
+          <span key={l} style={{ fontSize: 12, fontWeight: 600, color: T.primary, background: T.primaryLight, borderRadius: 8, padding: '4px 12px', cursor: 'pointer' }}>{l}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function JsonBlock({ children }) {
+  return (
+    <pre style={{
+      margin: 0, fontSize: 11.5, lineHeight: 1.7,
+      background: '#1E2030', color: '#A8D8B8',
+      borderRadius: 10, padding: '12px 14px',
+      fontFamily: 'ui-monospace,"SF Mono",Menlo,monospace',
+      whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowX: 'auto',
+    }}>{children}</pre>
+  );
+}
+
+/* ───── TWEAKS ───── */
+const TWEAK_DEFAULTS = { onboardingStyle: 'emoji', staminaStyle: 'bar', planLayout: 'timeline' };
+
+/* ───── APP ───── */
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [screen, setScreen] = useSA(() => localStorage.getItem('masil.screen') || 'splash');
+  const [capsuleSpots, setCapsuleSpots] = useSA([]);
+  const [phoneScale, setPhoneScale] = useSA(1);
+  const [phoneColW, setPhoneColW] = useSA(440);
+  const [isWide, setIsWide] = useSA(window.innerWidth > 860);
+  const STRIP = 50, PW = 402, PH = 874;
+
+  useEA(() => { localStorage.setItem('masil.screen', screen); }, [screen]);
+  useEA(() => {
+    const fit = () => {
+      const ww = window.innerWidth, wh = window.innerHeight;
+      const wide = ww > 860;
+      setIsWide(wide);
+      const col = wide ? Math.min(440, Math.round(ww * 0.43)) : ww;
+      setPhoneColW(col);
+      setPhoneScale(Math.min(1, (col - 28) / PW, (wh - STRIP - 28) / PH));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, []);
+
+  const go = (s) => setScreen(s);
+
+  const body = () => {
+    switch (screen) {
+      case 'splash':         return <Splash onDone={() => go('onboarding')} />;
+      case 'onboarding':     return <Onboarding style={t.onboardingStyle} onDone={() => go('condition')} />;
+      case 'condition':      return <Condition staminaStyle={t.staminaStyle} onBack={() => go('onboarding')} onDone={() => go('wish')} />;
+      case 'wish':           return <Wish onBack={() => go('condition')} onDone={() => go('loading')} />;
+      case 'loading':        return <PlanLoading onDone={() => go('plan')} />;
+      case 'plan':           return <PlanResult layout={t.planLayout} onBack={() => go('wish')} onCapsule={() => go('capsule-spots')} onCheckin={() => go('checkin')} />;
+      case 'checkin':        return <ConditionCheckin onBack={() => go('plan')} onPlan={() => go('plan')} />;
+      case 'capsule-spots':  return <TimeCapsuleSpots onBack={() => go('plan')} onNext={(s) => { setCapsuleSpots(s); go('capsule-write'); }} />;
+      case 'capsule-write':  return <TimeCapsuleWrite spots={capsuleSpots} onBack={() => go('capsule-spots')} onDone={() => go('plan')} />;
+      default: return null;
+    }
+  };
+
+  const jump = (label, s) => <TweakButton label={label} onClick={() => go(s)} />;
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#eef1f0', overflow: 'hidden' }}>
+      <FlowStrip screen={screen} go={go} />
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* phone column */}
+        <div style={{ width: phoneColW, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <div style={{ transform: `scale(${phoneScale})`, transformOrigin: 'center' }}>
+            <IOSDevice>{body()}</IOSDevice>
+          </div>
+        </div>
+        {/* handoff column — desktop only */}
+        {isWide && (
+          <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+            <HandoffPanel screen={screen} />
+          </div>
+        )}
+      </div>
+
+      <TweaksPanel>
+        <TweakSection label="온보딩 일러스트 스타일" />
+        <TweakRadio label="온보딩" value={t.onboardingStyle} options={['emoji', 'illustration', 'minimal']}
+          onChange={v => { setTweak('onboardingStyle', v); go('onboarding'); }} />
+
+        <TweakSection label="체력·컨디션 입력 UI" />
+        <TweakRadio label="체력 입력" value={t.staminaStyle} options={['bar', 'slider', 'faces']}
+          onChange={v => { setTweak('staminaStyle', v); go('condition'); }} />
+
+        <TweakSection label="플랜 리스트 스타일" />
+        <TweakRadio label="리스트" value={t.planLayout} options={['timeline', 'cards', 'compact']}
+          onChange={v => { setTweak('planLayout', v); go('plan'); }} />
+
+        <TweakSection label="화면 바로가기" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {jump('스플래시', 'splash')}
+          {jump('온보딩', 'onboarding')}
+          {jump('컨디션', 'condition')}
+          {jump('소원', 'wish')}
+          {jump('로딩', 'loading')}
+          {jump('플랜 결과', 'plan')}
+          {jump('체크인', 'checkin')}
+          {jump('타임캡슐', 'capsule-spots')}
+        </div>
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
